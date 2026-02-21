@@ -117,12 +117,41 @@ function injectCssRules() {
         .toc-item {
             display: flex; align-items: center; padding: 6px 8px; background: #fff;
             border: 1px solid #ddd; margin-bottom: 5px; border-radius: 6px;
-            transition: all 0.2s;
+            transition: all 0.1s;
+            user-select: none;
+            cursor: grab;
+            position: relative; 
         }
+        .toc-item:active {
+            cursor: grabbing;
+        }
+
+        /* -----------------------------------------------------------
+           드래그 앤 드롭 시각 효과 강화
+        ----------------------------------------------------------- */
+        
+        .toc-item.dragging {
+            opacity: 0.4;
+            background: #f0f0f0;
+            border: 2px dashed #9a86d3; 
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.05);
+        }
+
+        .toc-item.drag-over {
+            border-top: 3px solid #9a86d3 !important; 
+            background: linear-gradient(to bottom, #f3f0ff, #fff);
+            transform: translateY(2px); 
+            opacity: 1 !important; 
+        }
+
+        .toc-item-name[contenteditable="true"] {
+            user-select: text;
+            cursor: text;
+        }
+
         .toc-item.type-header { background: #fff5eb; border-color: #ffd8a8; font-weight: bold; }
         .toc-item.type-folder { background: #eef; }
         
-        /* 숨김 처리된 아이템 시각화 */
         .toc-item.is-hidden {
             opacity: 0.6;
             background: #f0f0f0;
@@ -188,8 +217,15 @@ function getDomItems($container) {
 
         if ($el.hasClass('character_select')) {
             type = 'char';
-            id = $el.attr('data-chid');
             name = $el.find('.ch_name').text().trim();
+            const chid = $el.attr('data-chid');
+            
+            if (typeof characters !== 'undefined' && characters[chid]) {
+                id = characters[chid].avatar; 
+            }
+            
+            if (!id) id = name;
+
             $el.find('.tags .tag_name').each(function() {
                 tags.push($(this).text().trim());
             });
@@ -213,13 +249,18 @@ function getDomItems($container) {
 // 3. Logic: DOM 재배치 (Fluidity 대응)
 // =========================================================================
 
+let observerTimeout = null;
+
 function connectObserver() {
     const target = document.getElementById('rm_print_characters_block');
     if (target && !mainListObserver) {
         mainListObserver = new MutationObserver((mutations) => {
-            hideFoldersOnListUpdate();
+            if (observerTimeout) clearTimeout(observerTimeout);
+            observerTimeout = setTimeout(() => {
+                hideFoldersOnListUpdate();
+            }, 100);
         });
-        mainListObserver.observe(target, { childList: true });
+        mainListObserver.observe(target, { childList: true, subtree: false });
     }
 }
 
@@ -227,6 +268,10 @@ function disconnectObserver() {
     if (mainListObserver) {
         mainListObserver.disconnect();
         mainListObserver = null;
+    }
+    if (observerTimeout) {
+        clearTimeout(observerTimeout);
+        observerTimeout = null;
     }
 }
 
@@ -245,30 +290,41 @@ function applyTocOrderToDom($container) {
     }
 
     const currentItems = getDomItems($container);
-    const itemMap = {}; 
-    currentItems.forEach(item => {
-        itemMap[`${item.type}_${item.id}`] = item.$el;
-        item.$el.detach(); 
-    });
+    
+    // 1. 모든 요소 DOM에서 분리
+    currentItems.forEach(item => item.$el.detach());
 
-    $container.find('.char-list-separator').remove();
-
+    // 2. 뒤로가기 버튼 처리 (무조건 맨 위로 가도록 prepend 사용)
     const $backBtn = $container.find('#BogusFolderBack');
     if ($backBtn.length) {
         $backBtn.detach();
-        $container.append($backBtn);
+        $container.prepend($backBtn);
     }
 
-    const excludeFolders = tocConfig.excludeFolders;
-    const processedKeys = new Set();
+    $container.find('.char-list-separator').remove();
 
-    // (A) 폴더 제외 모드: 폴더를 먼저 상단에 배치
+    // 3. Map 생성 (파일명 기준) 및 Name Map 생성 (비상용)
+    const itemMap = new Map();   // Key: type_Avatar.png
+    const nameMap = new Map();   // Key: type_이름 (Config 불일치 대응용)
+
+    currentItems.forEach(item => {
+        const key = `${item.type}_${item.id}`; 
+        itemMap.set(key, item);
+        
+        const nameKey = `${item.type}_${item.name}`;
+        nameMap.set(nameKey, item);
+    });
+
+    const excludeFolders = tocConfig.excludeFolders;
+    const processedKeys = new Set(); 
+
+    // (A) 폴더 제외 모드
     if (excludeFolders) {
         currentItems.forEach(item => {
             if (item.type === 'folder') {
                 const key = `folder_${item.id}`;
-                if (itemMap[key]) {
-                    $container.append(itemMap[key]);
+                if (itemMap.has(key)) {
+                    $container.append(item.$el);
                     processedKeys.add(key);
                 }
             }
@@ -287,27 +343,37 @@ function applyTocOrderToDom($container) {
         } else {
             if (confItem.type === 'folder' && excludeFolders) return; 
 
-            const key = `${confItem.type}_${confItem.id}`;
-            const $el = itemMap[key];
-            if ($el) {
-                $container.append($el);
+            let key = `${confItem.type}_${confItem.id}`;
+            let item = itemMap.get(key);
+
+            if (!item) {
+                const fallbackKey = `${confItem.type}_${confItem.id}`;
+                item = nameMap.get(fallbackKey);
+                
+                if (item) {
+                    key = `${item.type}_${item.id}`; 
+                }
+            }
+
+            if (item && !processedKeys.has(key)) {
+                $container.append(item.$el);
                 processedKeys.add(key);
             }
         }
     });
 
-    // (C) 유동성 대응
+    // (C) 유동성 대응 (새로 추가된 캐릭터 + Config에 없는 캐릭터)
     currentItems.forEach(item => {
         const key = `${item.type}_${item.id}`;
-        if (!processedKeys.has(key)) {
-            const $el = itemMap[key];
-            if ($el) {
-                $container.append($el);
-            }
+        
+        if (processedKeys.has(key)) return;
+
+        if (item.$el.parent().length === 0) {
+            $container.append(item.$el);
         }
     });
 
-    // (D) 히든 카운터 블록 맨 뒤로
+    // (D) 히든 카운터 블록 처리
     const $hiddenBlock = $container.find('.hidden_block');
     $hiddenBlock.detach();
     $container.append($hiddenBlock);
@@ -492,7 +558,9 @@ function renderTocManagerPopup() {
             const titleAttr = (item.type === 'char' && item.tags) ? `Tags: ${item.tags.join(', ')}` : '';
 
             const html = `
-                <div class="toc-item ${isHeader ? 'type-header' : 'type-' + item.type} ${hiddenClass}" data-index="${index}">
+                <div class="toc-item ${isHeader ? 'type-header' : 'type-' + item.type} ${hiddenClass}" 
+                     data-index="${index}" 
+                     draggable="true">
                     <input type="checkbox" class="toc-item-checkbox" ${isChecked}>
                     <i class="fa-solid ${iconClass}"></i>
                     <span class="toc-item-name" ${isHeader ? 'contenteditable="true"' : ''} title="${titleAttr}">${name}</span>
@@ -511,24 +579,87 @@ function renderTocManagerPopup() {
     }
 
     function bindItemEvents() {
-        $('.toc-item-checkbox').change(function() {
+        $('.toc-item-checkbox').change(function(e) {
             workingList[$(this).closest('.toc-item').data('index')]._selected = $(this).is(':checked');
         });
-        $list.find('.toc-btn.up').click(function() {
+        
+        $list.find('.toc-btn.up').click(function(e) {
+            e.stopPropagation(); 
             const idx = $(this).closest('.toc-item').data('index');
             if (idx > 0) { [workingList[idx], workingList[idx-1]] = [workingList[idx-1], workingList[idx]]; renderList(); }
         });
-        $list.find('.toc-btn.down').click(function() {
+        $list.find('.toc-btn.down').click(function(e) {
+            e.stopPropagation();
             const idx = $(this).closest('.toc-item').data('index');
             if (idx < workingList.length - 1) { [workingList[idx], workingList[idx+1]] = [workingList[idx+1], workingList[idx]]; renderList(); }
         });
-        $list.find('.toc-btn.del').click(function() {
+        $list.find('.toc-btn.del').click(function(e) {
+            e.stopPropagation();
             if (confirm('이 구분선을 삭제하시겠습니까?')) { workingList.splice($(this).closest('.toc-item').data('index'), 1); renderList(); }
         });
+        
         $list.find('.toc-item-name[contenteditable]').on('blur', function() {
             const idx = $(this).closest('.toc-item').data('index');
             const newText = $(this).text().replace('[구분선] ', '').trim();
             if (workingList[idx].type === 'header') workingList[idx].text = newText;
+        }).on('mousedown click', function(e) {
+            $(this).closest('.toc-item').attr('draggable', 'false');
+        }).on('blur', function() {
+            $(this).closest('.toc-item').attr('draggable', 'true');
+        });
+
+        // ----------------------------------------------------
+        // Drag and Drop Logic (Enhanced Visibility)
+        // ----------------------------------------------------
+        let draggedIndex = null;
+
+        $list.find('.toc-item').on('dragstart', function(e) {
+            if ($(e.target).is('input, button, .toc-btn, .toc-btn *, [contenteditable="true"]')) {
+                e.preventDefault();
+                return;
+            }
+
+            draggedIndex = $(this).data('index');
+            e.originalEvent.dataTransfer.effectAllowed = 'move';
+            e.originalEvent.dataTransfer.setData('text/plain', draggedIndex); 
+            
+            $(this).addClass('dragging');
+        });
+
+        $list.find('.toc-item').on('dragend', function() {
+            $(this).removeClass('dragging');
+            $('.toc-item').removeClass('drag-over');
+            draggedIndex = null;
+        });
+
+        $list.find('.toc-item').on('dragover', function(e) {
+            e.preventDefault(); // Drop 허용
+            e.originalEvent.dataTransfer.dropEffect = 'move';
+
+            $('.toc-item').not(this).removeClass('drag-over');
+            $(this).addClass('drag-over');
+        });
+
+        $list.find('.toc-item').on('dragleave', function(e) {
+            $(this).removeClass('drag-over');
+        });
+
+        $list.find('.toc-item').on('drop', function(e) {
+            e.preventDefault();
+            
+            $('.toc-item').removeClass('drag-over dragging');
+
+            const droppedIndex = $(this).data('index');
+
+            if (draggedIndex !== null && draggedIndex !== undefined && draggedIndex !== droppedIndex) {
+                const itemToMove = workingList[draggedIndex];
+                
+                workingList.splice(draggedIndex, 1);
+                
+                workingList.splice(droppedIndex, 0, itemToMove);
+                
+                renderList();
+            }
         });
     }
 
