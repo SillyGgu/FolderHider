@@ -45,7 +45,6 @@ function injectCssRules() {
             display: none !important;
         }
 
-        /* 구분선(Divider) 스타일 강화 */
         .char-list-separator {
             display: flex;
             align-items: center;
@@ -113,23 +112,84 @@ function injectCssRules() {
         .toc-body { flex: 1; overflow-y: auto; padding: 10px; background: #f8f8fc; }
         .toc-footer { padding: 15px; background: #fff; border-top: 1px solid #ddd; display: flex; gap: 10px; justify-content: flex-end; }
         
-        /* 리스트 아이템 스타일 */
         .toc-item {
             display: flex; align-items: center; padding: 6px 8px; background: #fff;
             border: 1px solid #ddd; margin-bottom: 5px; border-radius: 6px;
             transition: all 0.1s;
             user-select: none;
             cursor: grab;
-            position: relative; 
+            position: relative;
+            flex-wrap: nowrap; 
+            height: auto;
         }
         .toc-item:active {
             cursor: grabbing;
         }
-
-        /* -----------------------------------------------------------
-           드래그 앤 드롭 시각 효과 강화
-        ----------------------------------------------------------- */
         
+        .toc-btn.info {
+            color: #0984e3; border-color: #74b9ff; background: #eaf4ff;
+            position: relative; 
+        }
+        .toc-btn.info:hover {
+            background: #dcefff;
+            z-index: 100; 
+        }
+
+        .toc-tooltip {
+            display: none;
+            position: absolute;
+            bottom: 30px;
+            right: 0; 
+            width: 280px;
+            background: #fff;
+            border: 1px solid #b2bec3;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            padding: 12px;
+            border-radius: 8px;
+            z-index: 9999;
+            text-align: left;
+            white-space: normal;
+            pointer-events: none; /* 마우스 간섭 방지 */
+            cursor: default;
+        }
+        
+        /* 툴팁 화살표 */
+        .toc-tooltip::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            right: 8px;
+            border-width: 6px;
+            border-style: solid;
+            border-color: #fff transparent transparent transparent;
+        }
+
+        .toc-btn.info:hover .toc-tooltip {
+            display: block;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .toc-tags-row { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #eee; }
+        
+        .toc-tag-pill {
+            display: inline-block;
+            background: #f1f2f6;
+            border: 1px solid #dfe4ea;
+            border-radius: 4px;
+            padding: 1px 6px;
+            margin: 0 4px 4px 0;
+            font-size: 0.75rem;
+            color: #57606f;
+        }
+
+        .toc-desc-text {
+            color: #636e72;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            font-style: normal;
+        }
+        
+        /* 드래그 앤 드롭 시각 효과 */
         .toc-item.dragging {
             opacity: 0.4;
             background: #f0f0f0;
@@ -167,7 +227,7 @@ function injectCssRules() {
 
         .toc-item-checkbox { margin-right: 10px; transform: scale(1.2); cursor: pointer; }
         .toc-item-name { flex: 1; margin-left: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
-        .toc-controls { display: flex; gap: 4px; margin-left: 10px; }
+        .toc-controls { display: flex; gap: 4px; margin-left: 10px; align-items: center; }
         .toc-btn {
             border: 1px solid #ccc; background: #f0f0f0; border-radius: 4px;
             width: 24px; height: 24px; cursor: pointer;
@@ -180,6 +240,7 @@ function injectCssRules() {
     const $style = $(`<style id="${STYLE_ID}">`).text(staticCss);
     $('head').append($style);
 }
+
 
 // =========================================================================
 // 2. Logic: 컨텍스트 식별 및 DOM 획득
@@ -214,17 +275,20 @@ function getDomItems($container) {
         let id = null;
         let name = '';
         let tags = [];
+        let description = '';
 
         if ($el.hasClass('character_select')) {
             type = 'char';
             name = $el.find('.ch_name').text().trim();
             const chid = $el.attr('data-chid');
             
-            if (typeof characters !== 'undefined' && characters[chid]) {
+            description = $el.find('.ch_description').text().trim();
+
+            if (typeof characters !== 'undefined' && characters[chid] && characters[chid].avatar) {
                 id = characters[chid].avatar; 
+            } else {
+                id = `${name}_${chid}`;
             }
-            
-            if (!id) id = name;
 
             $el.find('.tags .tag_name').each(function() {
                 tags.push($(this).text().trim());
@@ -239,7 +303,7 @@ function getDomItems($container) {
         }
 
         if (type !== 'unknown' && id) {
-            items.push({ type, id, name, tags, $el }); 
+            items.push({ type, id, name, tags, description, $el }); 
         }
     });
     return items;
@@ -255,6 +319,25 @@ function connectObserver() {
     const target = document.getElementById('rm_print_characters_block');
     if (target && !mainListObserver) {
         mainListObserver = new MutationObserver((mutations) => {
+            if (settings.enabled && settings.hiddenFolders.length > 0) {
+                const isSubFolderView = document.getElementById('BogusFolderBack');
+                
+                if (!isSubFolderView) {
+                    const hiddenTitles = settings.hiddenFolders.map(name => `[Folder] ${name.replace(/"/g, '\\"')}`);
+                    
+                    mutations.forEach(mutation => {
+                        mutation.addedNodes.forEach(node => {
+                            if (node.nodeType === 1 && node.classList.contains('bogus_folder_select')) {
+                                const title = node.querySelector('span.ch_name')?.getAttribute('title');
+                                if (title && hiddenTitles.includes(title)) {
+                                    node.classList.add(HIDDEN_CLASS);
+                                }
+                            }
+                        });
+                    });
+                }
+            }
+
             if (observerTimeout) clearTimeout(observerTimeout);
             observerTimeout = setTimeout(() => {
                 hideFoldersOnListUpdate();
@@ -291,10 +374,10 @@ function applyTocOrderToDom($container) {
 
     const currentItems = getDomItems($container);
     
-    // 1. 모든 요소 DOM에서 분리
+    // 1. 일단 모두 떼어냄
     currentItems.forEach(item => item.$el.detach());
 
-    // 2. 뒤로가기 버튼 처리 (무조건 맨 위로 가도록 prepend 사용)
+    // 2. 뒤로가기 버튼 처리 (최상단 보장)
     const $backBtn = $container.find('#BogusFolderBack');
     if ($backBtn.length) {
         $backBtn.detach();
@@ -303,29 +386,23 @@ function applyTocOrderToDom($container) {
 
     $container.find('.char-list-separator').remove();
 
-    // 3. Map 생성 (파일명 기준) 및 Name Map 생성 (비상용)
-    const itemMap = new Map();   // Key: type_Avatar.png
-    const nameMap = new Map();   // Key: type_이름 (Config 불일치 대응용)
-
+    // 3. 맵핑 (파일명 기준)
+    const itemMap = new Map(); 
     currentItems.forEach(item => {
-        const key = `${item.type}_${item.id}`; 
+        const key = `${item.type}_${item.id}`;
         itemMap.set(key, item);
-        
-        const nameKey = `${item.type}_${item.name}`;
-        nameMap.set(nameKey, item);
     });
 
     const excludeFolders = tocConfig.excludeFolders;
-    const processedKeys = new Set(); 
-
+    
     // (A) 폴더 제외 모드
     if (excludeFolders) {
         currentItems.forEach(item => {
             if (item.type === 'folder') {
                 const key = `folder_${item.id}`;
-                if (itemMap.has(key)) {
-                    $container.append(item.$el);
-                    processedKeys.add(key);
+                const itemObj = itemMap.get(key);
+                if (itemObj) {
+                    $container.append(itemObj.$el);
                 }
             }
         });
@@ -343,37 +420,34 @@ function applyTocOrderToDom($container) {
         } else {
             if (confItem.type === 'folder' && excludeFolders) return; 
 
+            // 1. 파일명(ID)으로 찾기
             let key = `${confItem.type}_${confItem.id}`;
             let item = itemMap.get(key);
 
+            // 2. 못 찾았다면 이름으로 찾기 (마이그레이션 대응)
             if (!item) {
-                const fallbackKey = `${confItem.type}_${confItem.id}`;
-                item = nameMap.get(fallbackKey);
-                
-                if (item) {
-                    key = `${item.type}_${item.id}`; 
-                }
+                item = currentItems.find(i => 
+                    i.name === confItem.id &&
+                    i.type === confItem.type && 
+                    i.$el.parent().length === 0 
+                );
             }
 
-            if (item && !processedKeys.has(key)) {
+            if (item && item.$el.parent().length === 0) {
                 $container.append(item.$el);
-                processedKeys.add(key);
             }
         }
     });
 
-    // (C) 유동성 대응 (새로 추가된 캐릭터 + Config에 없는 캐릭터)
-    currentItems.forEach(item => {
-        const key = `${item.type}_${item.id}`;
-        
-        if (processedKeys.has(key)) return;
+    // (C) 유동성 대응 
 
+    currentItems.forEach(item => {
         if (item.$el.parent().length === 0) {
             $container.append(item.$el);
         }
     });
 
-    // (D) 히든 카운터 블록 처리
+    // (D) 히든 카운터 블록
     const $hiddenBlock = $container.find('.hidden_block');
     $hiddenBlock.detach();
     $container.append($hiddenBlock);
@@ -555,7 +629,26 @@ function renderTocManagerPopup() {
             const iconClass = isHeader ? 'fa-heading' : (item.type === 'folder' ? 'fa-folder' : 'fa-user');
             const isChecked = item._selected ? 'checked' : '';
             const hiddenClass = isHidden ? 'is-hidden' : '';
-            const titleAttr = (item.type === 'char' && item.tags) ? `Tags: ${item.tags.join(', ')}` : '';
+            
+            let infoBtnHtml = '';
+            if (!isHeader) {
+                const tagsHtml = (item.tags && item.tags.length > 0) 
+                    ? item.tags.map(t => `<span class="toc-tag-pill">${t}</span>`).join('') 
+                    : '';
+                const descHtml = (item.description) ? `<div class="toc-desc-text">${item.description}</div>` : '';
+                
+                if (tagsHtml || descHtml) {
+                    infoBtnHtml = `
+                        <div class="toc-btn info">
+                            <i class="fa-solid fa-info"></i>
+                            <div class="toc-tooltip">
+                                ${tagsHtml ? `<div class="toc-tags-row">${tagsHtml}</div>` : ''}
+                                ${descHtml || '<span style="color:#aaa;">설명 없음</span>'}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
 
             const html = `
                 <div class="toc-item ${isHeader ? 'type-header' : 'type-' + item.type} ${hiddenClass}" 
@@ -563,8 +656,9 @@ function renderTocManagerPopup() {
                      draggable="true">
                     <input type="checkbox" class="toc-item-checkbox" ${isChecked}>
                     <i class="fa-solid ${iconClass}"></i>
-                    <span class="toc-item-name" ${isHeader ? 'contenteditable="true"' : ''} title="${titleAttr}">${name}</span>
+                    <span class="toc-item-name" ${isHeader ? 'contenteditable="true"' : ''}>${name}</span>
                     <div class="toc-controls">
+                        ${infoBtnHtml} <!-- 정보 버튼 배치 -->
                         <div class="toc-btn up"><i class="fa-solid fa-arrow-up"></i></div>
                         <div class="toc-btn down"><i class="fa-solid fa-arrow-down"></i></div>
                         ${isHeader ? '<div class="toc-btn del"><i class="fa-solid fa-trash"></i></div>' : ''}
@@ -579,10 +673,12 @@ function renderTocManagerPopup() {
     }
 
     function bindItemEvents() {
+        // 1. 체크박스 변경 이벤트
         $('.toc-item-checkbox').change(function(e) {
             workingList[$(this).closest('.toc-item').data('index')]._selected = $(this).is(':checked');
         });
         
+        // 2. 버튼 이벤트 (위/아래/삭제)
         $list.find('.toc-btn.up').click(function(e) {
             e.stopPropagation(); 
             const idx = $(this).closest('.toc-item').data('index');
@@ -598,6 +694,7 @@ function renderTocManagerPopup() {
             if (confirm('이 구분선을 삭제하시겠습니까?')) { workingList.splice($(this).closest('.toc-item').data('index'), 1); renderList(); }
         });
         
+        // 3. 텍스트 수정 (헤더) 이벤트
         $list.find('.toc-item-name[contenteditable]').on('blur', function() {
             const idx = $(this).closest('.toc-item').data('index');
             const newText = $(this).text().replace('[구분선] ', '').trim();
@@ -609,7 +706,7 @@ function renderTocManagerPopup() {
         });
 
         // ----------------------------------------------------
-        // Drag and Drop Logic (Enhanced Visibility)
+        // 드래그 앤 드롭: 다중 선택 이동 지원
         // ----------------------------------------------------
         let draggedIndex = null;
 
@@ -623,20 +720,37 @@ function renderTocManagerPopup() {
             e.originalEvent.dataTransfer.effectAllowed = 'move';
             e.originalEvent.dataTransfer.setData('text/plain', draggedIndex); 
             
-            $(this).addClass('dragging');
+            const isSelected = workingList[draggedIndex]._selected;
+            if (isSelected) {
+                $list.find('.toc-item').each(function() {
+                    const idx = $(this).data('index');
+                    if (workingList[idx]._selected) {
+                        $(this).addClass('dragging');
+                    }
+                });
+            } else {
+                $(this).addClass('dragging');
+            }
         });
 
         $list.find('.toc-item').on('dragend', function() {
-            $(this).removeClass('dragging');
-            $('.toc-item').removeClass('drag-over');
+            $('.toc-item').removeClass('dragging drag-over');
             draggedIndex = null;
         });
 
         $list.find('.toc-item').on('dragover', function(e) {
-            e.preventDefault(); // Drop 허용
+            e.preventDefault(); 
             e.originalEvent.dataTransfer.dropEffect = 'move';
 
-            $('.toc-item').not(this).removeClass('drag-over');
+            $('.toc-item').removeClass('drag-over');
+            
+            const idx = $(this).data('index');
+            const isDraggingSelected = (draggedIndex !== null) && workingList[draggedIndex]._selected;
+            
+            if (isDraggingSelected && workingList[idx]._selected) {
+                return;
+            }
+
             $(this).addClass('drag-over');
         });
 
@@ -646,18 +760,42 @@ function renderTocManagerPopup() {
 
         $list.find('.toc-item').on('drop', function(e) {
             e.preventDefault();
-            
             $('.toc-item').removeClass('drag-over dragging');
 
             const droppedIndex = $(this).data('index');
+            
+            if (draggedIndex === null || draggedIndex === undefined) return;
 
-            if (draggedIndex !== null && draggedIndex !== undefined && draggedIndex !== droppedIndex) {
+            const droppedItem = workingList[droppedIndex]; 
+            const isMultiDrag = workingList[draggedIndex]._selected;
+
+            // 1. 다중 선택 이동 (선택된 항목 중 하나를 잡고 드래그했을 때)
+            if (isMultiDrag) {
+                if (droppedItem._selected) return;
+
+                const itemsToMove = workingList.filter(item => item._selected);
+                const remainingItems = workingList.filter(item => !item._selected);
+
+                let newIndex = remainingItems.indexOf(droppedItem);
+                
+                if (newIndex !== -1) {
+                    remainingItems.splice(newIndex, 0, ...itemsToMove);
+                    workingList = remainingItems;
+                    renderList();
+                }
+            } 
+            // 2. 단일 항목 이동 (선택되지 않은 항목을 드래그했을 때)
+            else if (draggedIndex !== droppedIndex) {
                 const itemToMove = workingList[draggedIndex];
                 
-                workingList.splice(draggedIndex, 1);
+                const tempArray = [...workingList];
+                tempArray.splice(draggedIndex, 1);
+
+                let targetIndex = tempArray.indexOf(droppedItem);
+
+                tempArray.splice(targetIndex, 0, itemToMove);
                 
-                workingList.splice(droppedIndex, 0, itemToMove);
-                
+                workingList = tempArray;
                 renderList();
             }
         });
