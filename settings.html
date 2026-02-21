@@ -1,50 +1,88 @@
 <div class="extension-block folderhider-settings lavender-theme">
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-            <b style="color: #9a86d3;">캐릭터 폴더 숨기기 설정</b>
+            <b style="color: #9a86d3;">캐릭터 폴더 숨기기 & 목차 설정</b>
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
 
         <div class="inline-drawer-content">
             
-            <div class="control-group">
-                <label class="flex-container-checkbox-inline">
-                    <input type="checkbox" id="folder_hider_enable_toggle">
-                    <span>기능 활성화</span>
-                </label>
+            <!-- 탭 네비게이션 -->
+            <div class="fh-tab-nav">
+                <button class="fh-tab-btn active" data-tab="tab_folder_hide">📂 폴더 숨기기</button>
+                <button class="fh-tab-btn" data-tab="tab_toc_order">🔢 목차/순서 설정</button>
+                <button class="fh-tab-btn" data-tab="tab_backup">💾 백업/복원</button>
             </div>
 
-            <hr class="sysHR">
+            <hr class="sysHR" style="margin-top:0;">
 
-            <div class="menu-section">
-                <h3>숨길 폴더 추가</h3>
+            <!-- 탭 1: 폴더 숨기기 -->
+            <div id="tab_folder_hide" class="fh-tab-content active">
                 <div class="control-group">
-                    <label>숨길 폴더 이름 입력 (예: 2차, 백업):</label>
-                    <input type="text" id="folder_name_input" placeholder="숨기려는 폴더 이름">
-                    <div class="button-row">
-                        <button id="add_folder_btn" class="lavender-btn">＋ 폴더 숨김 규칙 추가</button>
+                    <label class="flex-container-checkbox-inline">
+                        <input type="checkbox" id="folder_hider_enable_toggle">
+                        <span>기능 활성화 (숨기기 및 목차 적용)</span>
+                    </label>
+                </div>
+
+                <div class="menu-section">
+                    <h3>숨길 폴더 추가</h3>
+                    <div class="control-group">
+                        <label>숨길 폴더 이름 입력 (예: 2차, 백업):</label>
+                        <input type="text" id="folder_name_input" placeholder="숨기려는 폴더 이름">
+                        <div class="button-row">
+                            <button id="add_folder_btn" class="lavender-btn">＋ 폴더 숨김 규칙 추가</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="menu-section">
+                    <h3>현재 숨긴 폴더 목록</h3>
+                    <div class="folder-info">
+                        총 <span id="hidden_folder_count">0</span>개 폴더가 숨김 처리 중입니다.
+                    </div>
+                    <div id="hidden_folder_list_container" class="scrollable-list resizable">
+                        <div id="folder_list_placeholder" class="placeholder">
+                            숨김 처리된 폴더가 없습니다.
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <hr class="sysHR">
-
-            <div class="menu-section">
-                <h3>현재 숨긴 폴더 목록</h3>
-                <div class="folder-info">
-                    총 <span id="hidden_folder_count">0</span>개 폴더가 숨김 처리 중입니다.
-                </div>
-                <div id="hidden_folder_list_container" class="scrollable-list resizable">
-                    <!-- 예시 아이템 -->
-                    <div class="folder-list-item">
-                        <span class="folder-name">예시폴더</span>
-                        <button class="delete-btn">
-                            <i class="fa-solid fa-trash"></i> 삭제
+            <!-- 탭 2: 목차 관리 -->
+            <div id="tab_toc_order" class="fh-tab-content">
+                <div class="menu-section">
+                    <h3>현재 목록 목차(ToC) 관리</h3>
+                    <div class="control-group">
+                        <label>현재 보고 있는 목록의 순서를 변경하고 구분선을 추가합니다.</label>
+                        <p style="font-size:0.85em; color:#666; margin-bottom:10px;">
+                            팝업창에서 <b>태그 기반 일괄 선택</b> 및 <b>구분선으로 이동</b> 기능을 사용할 수 있습니다.
+                        </p>
+                        <button id="open_toc_manager_btn" class="lavender-btn" style="background: linear-gradient(145deg, #d9cff5, #b7a4e0); color: #3a2e5f;">
+                            <i class="fa-solid fa-list-ol"></i> 현재 화면 순서/목차 편집 팝업 열기
                         </button>
+                        <small style="color: #888; margin-top:5px; display:block;">
+                            * 주의: 버튼을 누르면 현재 열려있는 목록(메인 또는 폴더)을 기준으로 설정창이 뜹니다.
+                        </small>
                     </div>
+                </div>
+            </div>
 
-                    <div id="folder_list_placeholder" class="placeholder">
-                        숨김 처리된 폴더가 없습니다.
+            <!-- 탭 3: 백업 및 복원 -->
+            <div id="tab_backup" class="fh-tab-content">
+                <div class="menu-section">
+                    <h3>설정 백업 및 복원</h3>
+                    <div class="control-group">
+                        <label>현재 설정(숨김 폴더 + 목차 순서)을 텍스트로 저장하거나 불러옵니다.</label>
+                        <textarea id="setting_backup_area" rows="3" placeholder="내보내기 버튼을 누르면 여기에 설정 코드가 나타납니다."></textarea>
+                        <div class="button-row" style="display:flex; gap:10px;">
+                            <button id="export_settings_btn" class="lavender-btn" style="flex:1;">📤 내보내기</button>
+                            <button id="import_settings_btn" class="lavender-btn" style="flex:1; background: linear-gradient(145deg, #cfd9f5, #a4b7e0);">📥 가져오기</button>
+                        </div>
+                        <small style="color: #888; margin-top:5px;">
+                            * 가져오기 시 현재 설정은 덮어씌워집니다. <br>
+                            * 불러온 설정에 없는 새로운 캐릭터는 목록의 최하단에 자동으로 추가됩니다 (유동성 대응).
+                        </small>
                     </div>
                 </div>
             </div>
@@ -55,7 +93,7 @@
 
 <style>
 /* =============================
-   🎨 라벤더 테마
+   🎨 라벤더 테마 및 공통 스타일
 ============================= */
 .lavender-theme {
     --accent-color: #bfaee3;
@@ -68,9 +106,6 @@
     color: var(--text-color);
 }
 
-/* =============================
-   🧭 레이아웃 / 제목
-============================= */
 .folderhider-settings .inline-drawer-content {
     background-color: var(--bg-color);
     border-radius: 14px;
@@ -78,10 +113,42 @@
     box-shadow: 0 4px 12px rgba(186, 172, 224, 0.2);
 }
 
-.folderhider-settings .menu-section {
-    margin-bottom: 30px;
+/* 탭 스타일 */
+.fh-tab-nav {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 15px;
 }
+.fh-tab-btn {
+    flex: 1;
+    padding: 8px 0;
+    border: none;
+    background: transparent;
+    border-bottom: 3px solid transparent;
+    font-weight: 600;
+    color: #888;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.fh-tab-btn:hover {
+    color: var(--text-color);
+    background-color: rgba(0,0,0,0.02);
+}
+.fh-tab-btn.active {
+    color: #9a86d3;
+    border-bottom: 3px solid #9a86d3;
+}
+.fh-tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+.fh-tab-content.active {
+    display: block;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
+
+.folderhider-settings .menu-section { margin-bottom: 30px; }
 .folderhider-settings .menu-section h3 {
     font-size: 1rem;
     font-weight: 600;
@@ -102,9 +169,6 @@
     border-radius: 3px;
 }
 
-/* =============================
-   📋 폼 요소
-============================= */
 .folderhider-settings .control-group {
     display: flex;
     flex-direction: column;
@@ -112,7 +176,8 @@
     margin-bottom: 18px;
 }
 
-.folderhider-settings input[type="text"] {
+.folderhider-settings input[type="text"],
+.folderhider-settings textarea {
     width: 100%;
     padding: 10px 12px;
     font-size: 0.9rem;
@@ -120,16 +185,14 @@
     border-radius: 6px;
     background-color: #fff;
     color: var(--text-color);
-    transition: all 0.2s ease;
+    resize: vertical;
 }
-.folderhider-settings input[type="text"]:focus {
+.folderhider-settings input[type="text"]:focus,
+.folderhider-settings textarea:focus {
     border-color: #9a86d3;
     box-shadow: 0 0 0 2px rgba(154, 134, 211, 0.15);
 }
 
-/* =============================
-   🔘 체크박스
-============================= */
 .folderhider-settings .flex-container-checkbox-inline {
     display: flex;
     align-items: center;
@@ -138,9 +201,6 @@
     cursor: pointer;
 }
 
-/* =============================
-   ✨ 메인 버튼
-============================= */
 .lavender-btn {
     display: inline-block;
     width: 100%;
@@ -160,16 +220,6 @@
     transform: translateY(-1px);
 }
 
-/* =============================
-   📑 리스트 / 항목
-============================= */
-.folderhider-settings .folder-info {
-    font-size: 0.85rem;
-    color: #6a5f8a;
-    margin-bottom: 10px;
-}
-
-/* 리스트 영역 */
 .folderhider-settings .scrollable-list {
     max-height: 200px;
     overflow-y: scroll;
@@ -180,16 +230,9 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    resize: vertical;
 }
+.folderhider-settings .scrollable-list::-webkit-scrollbar { width: 0px; background: transparent; }
 
-/* 투명 스크롤바 */
-.folderhider-settings .scrollable-list::-webkit-scrollbar {
-    width: 0px;
-    background: transparent;
-}
-
-/* 리스트 아이템 */
 .folderhider-settings .folder-list-item {
     display: flex;
     justify-content: space-between;
@@ -198,27 +241,16 @@
     background: #f9f7fd;
     border-radius: 6px;
     border: 1px solid var(--border-color);
-    box-shadow: 0 1px 2px rgba(186, 172, 224, 0.1);
-    transition: background 0.2s ease, transform 0.2s ease;
     font-size: 0.9rem;
 }
-.folderhider-settings .folder-list-item:hover {
-    background: #f2ecfa;
-}
-
-/* 폴더 이름 */
 .folderhider-settings .folder-name {
     font-weight: 500;
-    color: var(--text-color);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     flex-grow: 1;
 }
 
-/* =============================
-   🗑️ 삭제 버튼 (아이콘 포함)
-============================= */
 .folderhider-settings .delete-btn {
     display: flex;
     align-items: center;
@@ -232,53 +264,19 @@
     color: #3a2e5f;
     background: linear-gradient(145deg, #e5dbfa, #c7b5ef);
     cursor: pointer;
-    transition: all 0.25s ease;
-    box-shadow: 0 2px 4px rgba(180, 160, 220, 0.25);
-}
-.folderhider-settings .delete-btn i {
-    font-size: 0.8rem;
-    color: #7a6aaa;
 }
 .folderhider-settings .delete-btn:hover {
     background: linear-gradient(145deg, #d9cbf5, #b8a2e5);
-    transform: translateY(-1px);
-    box-shadow: 0 3px 6px rgba(170, 150, 220, 0.3);
-}
-.folderhider-settings .delete-btn:active {
-    transform: translateY(0);
 }
 
-/* placeholder */
-.placeholder {
-    text-align: center;
-    color: #aaa;
-    padding: 12px 0;
-}
-
-.folderhider-settings .fa,
-.folderhider-settings .fa-solid,
-.folderhider-settings .fa-regular,
-.folderhider-settings .fa-brands {
-    color: #ffffff !important;
-    filter: none !important;
-}
-/* =============================
-   🌸 구분선
-============================= */
 .folderhider-settings .sysHR {
     border: none;
     border-top: 1px dashed var(--border-color);
     margin: 25px 0;
 }
+.placeholder { text-align: center; color: #aaa; padding: 12px 0; }
 
-/* 반응형 */
-@media (max-width: 600px) {
-    .folderhider-settings .inline-drawer-content {
-        padding: 18px;
-    }
-    .folderhider-settings .delete-btn {
-        font-size: 0.75rem;
-        padding: 4px 8px;
-    }
+.folderhider-settings .fa, .folderhider-settings .fa-solid {
+    color: #ffffff !important; filter: none !important;
 }
 </style>
