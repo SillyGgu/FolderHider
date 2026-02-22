@@ -15,6 +15,19 @@
             </div>
 
             <hr class="sysHR" style="margin-top:0;">
+			<!-- 업데이트 알림 박스 (JS로 제어) -->
+			<div id="update_notice_box" class="notice-box" style="display:none;">
+				<div class="notice-header">
+					<i class="fa-solid fa-circle-exclamation"></i> 
+					<strong>업데이트 알림</strong>
+				</div>
+				
+				<div class="notice-content" id="update_notice_text_area"></div>
+
+				<button id="close_update_notice_btn" class="notice-close-btn">
+					확인했습니다 (다시 보지 않기)
+				</button>
+			</div>
 
             <!-- 탭 1: 폴더 숨기기 -->
             <div id="tab_folder_hide" class="fh-tab-content active">
@@ -278,5 +291,46 @@
 
 .folderhider-settings .fa, .folderhider-settings .fa-solid {
     color: #ffffff !important; filter: none !important;
+}
+
+/* 알림 박스 스타일 */
+.notice-box {
+    background-color: #fff4e5;
+    border: 1px solid #ffcc80;
+    color: #663c00;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    animation: fadeIn 0.5s;
+}
+.notice-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    color: #ef6c00;
+}
+.notice-header i {
+    color: #ef6c00 !important; /* 아이콘 색상 강제 적용 */
+}
+.notice-content p {
+    margin: 0 0 10px 0;
+    line-height: 1.4;
+}
+.notice-close-btn {
+    background: #fff;
+    border: 1px solid #ffb74d;
+    color: #ef6c00;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.8rem;
+    width: 100%;
+    transition: background 0.2s;
+}
+.notice-close-btn:hover {
+    background: #fff3e0;
 }
 </style>
