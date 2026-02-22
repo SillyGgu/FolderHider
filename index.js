@@ -1,6 +1,7 @@
 import {
     saveSettingsDebounced,
-    entitiesFilter
+    entitiesFilter,
+    characters
 } from '../../../../script.js';
 
 import { 
@@ -252,7 +253,8 @@ function getCurrentContextId() {
     const filterData = entitiesFilter.getFilterData('tag');
     const selectedTags = filterData ? filterData.selected : [];
 
-    const activeFolderTag = selectedTags
+    const activeFolderTag = [...selectedTags]
+        .reverse()
         .map(tagId => tags.find(t => t.id === tagId))
         .find(tag => tag && tag.folder_type);
 
@@ -284,10 +286,10 @@ function getDomItems($container) {
             
             description = $el.find('.ch_description').text().trim();
 
-            if (typeof characters !== 'undefined' && characters[chid] && characters[chid].avatar) {
+            if (characters[chid] && characters[chid].avatar) {
                 id = characters[chid].avatar; 
             } else {
-                id = `${name}_${chid}`;
+                id = name;
             }
 
             $el.find('.tags .tag_name').each(function() {
@@ -364,6 +366,15 @@ function applyTocOrderToDom($container) {
     disconnectObserver();
 
     const contextId = getCurrentContextId();
+    
+    // 1. 시각적으로 폴더 내부인지 확인
+    const isVisuallyInFolder = $container.find('#BogusFolderBack').length > 0;
+
+    if (contextId === 'root' && isVisuallyInFolder) {
+        connectObserver();
+        return;
+    }
+
     const tocConfig = settings.toc[contextId];
 
     if (!tocConfig || !tocConfig.items || tocConfig.items.length === 0) {
@@ -374,7 +385,32 @@ function applyTocOrderToDom($container) {
 
     const currentItems = getDomItems($container);
     
-    // 1. 일단 모두 떼어냄
+    // -------------------------------------------------------------------------
+    // "현재 화면의 아이템"과 "적용하려는 목차"의 일치율 검사
+    // -------------------------------------------------------------------------
+    
+    const realTocItems = tocConfig.items.filter(i => i.type !== 'header');
+    
+    if (currentItems.length > 0 && realTocItems.length > 0) {
+        const domKeySet = new Set(currentItems.map(i => `${i.type}_${i.id}`));
+        
+        let matchCount = 0;
+        
+        matchCount += realTocItems.filter(i => domKeySet.has(`${i.type}_${i.id}`)).length;
+
+        if (matchCount === 0) {
+            const domNameSet = new Set(currentItems.map(i => i.name));
+            matchCount += realTocItems.filter(i => domNameSet.has(i.id)).length;
+        }
+
+        if (matchCount === 0) {
+            connectObserver();
+            return;
+        }
+    }
+    // -------------------------------------------------------------------------
+
+    // 1. 일단 DOM 요소들을 모두 떼어냄 (Detach)
     currentItems.forEach(item => item.$el.detach());
 
     // 2. 뒤로가기 버튼 처리 (최상단 보장)
@@ -386,7 +422,7 @@ function applyTocOrderToDom($container) {
 
     $container.find('.char-list-separator').remove();
 
-    // 3. 맵핑 (파일명 기준)
+    // 3. 맵핑 준비 (파일명 기준)
     const itemMap = new Map(); 
     currentItems.forEach(item => {
         const key = `${item.type}_${item.id}`;
@@ -395,7 +431,7 @@ function applyTocOrderToDom($container) {
 
     const excludeFolders = tocConfig.excludeFolders;
     
-    // (A) 폴더 제외 모드
+    // (A) 폴더 제외 모드일 경우 폴더 먼저 배치
     if (excludeFolders) {
         currentItems.forEach(item => {
             if (item.type === 'folder') {
@@ -420,11 +456,9 @@ function applyTocOrderToDom($container) {
         } else {
             if (confItem.type === 'folder' && excludeFolders) return; 
 
-            // 1. 파일명(ID)으로 찾기
             let key = `${confItem.type}_${confItem.id}`;
             let item = itemMap.get(key);
 
-            // 2. 못 찾았다면 이름으로 찾기 (마이그레이션 대응)
             if (!item) {
                 item = currentItems.find(i => 
                     i.name === confItem.id &&
@@ -440,14 +474,13 @@ function applyTocOrderToDom($container) {
     });
 
     // (C) 유동성 대응 
-
     currentItems.forEach(item => {
         if (item.$el.parent().length === 0) {
             $container.append(item.$el);
         }
     });
 
-    // (D) 히든 카운터 블록
+    // (D) 히든 카운터 블록 처리
     const $hiddenBlock = $container.find('.hidden_block');
     $hiddenBlock.detach();
     $container.append($hiddenBlock);
@@ -482,16 +515,41 @@ function hideFoldersOnListUpdate() {
 // =========================================================================
 // 4. UI: 목차 관리 팝업 & 백업
 // =========================================================================
+
 function renderTocManagerPopup() {
     const contextId = getCurrentContextId();
-    const isFolderView = contextId.startsWith('folder_');
-    const contextName = isFolderView 
-        ? (tags.find(t => 'folder_' + t.id === contextId)?.name || '폴더 내부 뷰') 
+    const contextTagName = contextId.startsWith('folder_') 
+        ? (tags.find(t => 'folder_' + t.id === contextId)?.name || '폴더 내부') 
         : '메인 목록 (Root)';
 
     const savedConfig = settings.toc[contextId] || { excludeFolders: true, items: [] };
     const $container = $('#rm_print_characters_block');
-    const currentItems = getDomItems($container);
+    const currentItems = getDomItems($container); 
+
+    // =========================================================================
+    // 팝업 안전장치: "설정"과 "화면"의 불일치 감지 시 설정 무시
+    // =========================================================================
+    let workingConfigItems = savedConfig.items || [];
+    let isConfigMismatch = false;
+
+    const realConfigItems = workingConfigItems.filter(i => i.type !== 'header');
+    if (currentItems.length > 0 && realConfigItems.length > 0) {
+        const domKeySet = new Set(currentItems.map(i => `${i.type}_${i.id}`));
+        
+        let matchCount = realConfigItems.filter(i => domKeySet.has(`${i.type}_${i.id}`)).length;
+        
+        if (matchCount === 0) {
+            const domNameSet = new Set(currentItems.map(i => i.name));
+            matchCount += realConfigItems.filter(i => domNameSet.has(i.id)).length;
+        }
+
+        if (matchCount === 0) {
+            console.warn(`[FolderHider] Context mismatch detected in Popup. Ignoring saved config for safety.`);
+            workingConfigItems = []; 
+            isConfigMismatch = true;
+        }
+    }
+    // =========================================================================
 
     let workingList = [];
     const currentItemMap = new Map();
@@ -506,8 +564,8 @@ function renderTocManagerPopup() {
 
     const sortedTags = Array.from(allTagsSet).sort();
 
-    if (savedConfig.items) {
-        savedConfig.items.forEach(confItem => {
+    if (workingConfigItems.length > 0) {
+        workingConfigItems.forEach(confItem => {
             if (confItem.type === 'header') {
                 workingList.push({ type: 'header', text: confItem.text, id: `header_${Date.now()}_${Math.random()}` });
             } else {
@@ -519,15 +577,20 @@ function renderTocManagerPopup() {
             }
         });
     }
+    
     currentItemMap.forEach((val) => workingList.push(val));
 
     const tagOptionsHtml = sortedTags.map(tag => `<option value="${tag}">`).join('');
+    
+    const displayTitle = isConfigMismatch 
+        ? `${contextTagName} (주의: 상위 설정 분리됨)` 
+        : `${contextTagName} - 목차 관리`;
 
     const popupHtml = `
         <div class="toc-manager-overlay" id="toc_manager_popup">
             <div class="toc-manager-modal" id="toc_manager_modal_inner">
                 <div class="toc-header">
-                    <span>${contextName} - 목차 관리</span>
+                    <span>${displayTitle}</span>
                     <i class="fa-solid fa-xmark close-toc-btn" style="cursor:pointer;"></i>
                 </div>
                 
@@ -558,9 +621,7 @@ function renderTocManagerPopup() {
                     </div>
                 </div>
                 <div class="toc-footer">
-                    <!-- 초기화 버튼: 색상 변경 및 명확한 라벨 -->
                     <button class="lavender-btn reset-toc-btn" style="width: auto; padding: 0 15px; background: #ff7675; color: #fff; margin-right: auto;">↻ 데이터 삭제(초기화)</button>
-                    
                     <button class="lavender-btn add-sep-btn" style="width: auto; padding: 0 15px;">+ 구분선 추가</button>
                     <button class="lavender-btn save-toc-btn" style="width: auto; padding: 0 15px; background: #a29bfe; color: #fff;">저장 및 적용</button>
                 </div>
@@ -658,7 +719,7 @@ function renderTocManagerPopup() {
                     <i class="fa-solid ${iconClass}"></i>
                     <span class="toc-item-name" ${isHeader ? 'contenteditable="true"' : ''}>${name}</span>
                     <div class="toc-controls">
-                        ${infoBtnHtml} <!-- 정보 버튼 배치 -->
+                        ${infoBtnHtml}
                         <div class="toc-btn up"><i class="fa-solid fa-arrow-up"></i></div>
                         <div class="toc-btn down"><i class="fa-solid fa-arrow-down"></i></div>
                         ${isHeader ? '<div class="toc-btn del"><i class="fa-solid fa-trash"></i></div>' : ''}
@@ -673,12 +734,9 @@ function renderTocManagerPopup() {
     }
 
     function bindItemEvents() {
-        // 1. 체크박스 변경 이벤트
         $('.toc-item-checkbox').change(function(e) {
             workingList[$(this).closest('.toc-item').data('index')]._selected = $(this).is(':checked');
         });
-        
-        // 2. 버튼 이벤트 (위/아래/삭제)
         $list.find('.toc-btn.up').click(function(e) {
             e.stopPropagation(); 
             const idx = $(this).closest('.toc-item').data('index');
@@ -693,8 +751,6 @@ function renderTocManagerPopup() {
             e.stopPropagation();
             if (confirm('이 구분선을 삭제하시겠습니까?')) { workingList.splice($(this).closest('.toc-item').data('index'), 1); renderList(); }
         });
-        
-        // 3. 텍스트 수정 (헤더) 이벤트
         $list.find('.toc-item-name[contenteditable]').on('blur', function() {
             const idx = $(this).closest('.toc-item').data('index');
             const newText = $(this).text().replace('[구분선] ', '').trim();
@@ -705,98 +761,46 @@ function renderTocManagerPopup() {
             $(this).closest('.toc-item').attr('draggable', 'true');
         });
 
-        // ----------------------------------------------------
-        // 드래그 앤 드롭: 다중 선택 이동 지원
-        // ----------------------------------------------------
         let draggedIndex = null;
-
         $list.find('.toc-item').on('dragstart', function(e) {
             if ($(e.target).is('input, button, .toc-btn, .toc-btn *, [contenteditable="true"]')) {
-                e.preventDefault();
-                return;
+                e.preventDefault(); return;
             }
-
             draggedIndex = $(this).data('index');
             e.originalEvent.dataTransfer.effectAllowed = 'move';
             e.originalEvent.dataTransfer.setData('text/plain', draggedIndex); 
-            
-            const isSelected = workingList[draggedIndex]._selected;
-            if (isSelected) {
-                $list.find('.toc-item').each(function() {
-                    const idx = $(this).data('index');
-                    if (workingList[idx]._selected) {
-                        $(this).addClass('dragging');
-                    }
-                });
-            } else {
-                $(this).addClass('dragging');
-            }
+            if (workingList[draggedIndex]._selected) {
+                $list.find('.toc-item').each(function() { if (workingList[$(this).data('index')]._selected) $(this).addClass('dragging'); });
+            } else { $(this).addClass('dragging'); }
         });
-
-        $list.find('.toc-item').on('dragend', function() {
-            $('.toc-item').removeClass('dragging drag-over');
-            draggedIndex = null;
-        });
-
+        $list.find('.toc-item').on('dragend', function() { $('.toc-item').removeClass('dragging drag-over'); draggedIndex = null; });
         $list.find('.toc-item').on('dragover', function(e) {
-            e.preventDefault(); 
-            e.originalEvent.dataTransfer.dropEffect = 'move';
-
+            e.preventDefault(); e.originalEvent.dataTransfer.dropEffect = 'move';
             $('.toc-item').removeClass('drag-over');
-            
             const idx = $(this).data('index');
             const isDraggingSelected = (draggedIndex !== null) && workingList[draggedIndex]._selected;
-            
-            if (isDraggingSelected && workingList[idx]._selected) {
-                return;
-            }
-
+            if (isDraggingSelected && workingList[idx]._selected) return;
             $(this).addClass('drag-over');
         });
-
-        $list.find('.toc-item').on('dragleave', function(e) {
-            $(this).removeClass('drag-over');
-        });
-
         $list.find('.toc-item').on('drop', function(e) {
-            e.preventDefault();
-            $('.toc-item').removeClass('drag-over dragging');
-
+            e.preventDefault(); $('.toc-item').removeClass('drag-over dragging');
             const droppedIndex = $(this).data('index');
-            
             if (draggedIndex === null || draggedIndex === undefined) return;
-
             const droppedItem = workingList[droppedIndex]; 
             const isMultiDrag = workingList[draggedIndex]._selected;
-
-            // 1. 다중 선택 이동 (선택된 항목 중 하나를 잡고 드래그했을 때)
             if (isMultiDrag) {
                 if (droppedItem._selected) return;
-
                 const itemsToMove = workingList.filter(item => item._selected);
                 const remainingItems = workingList.filter(item => !item._selected);
-
                 let newIndex = remainingItems.indexOf(droppedItem);
-                
-                if (newIndex !== -1) {
-                    remainingItems.splice(newIndex, 0, ...itemsToMove);
-                    workingList = remainingItems;
-                    renderList();
-                }
-            } 
-            // 2. 단일 항목 이동 (선택되지 않은 항목을 드래그했을 때)
-            else if (draggedIndex !== droppedIndex) {
+                if (newIndex !== -1) { remainingItems.splice(newIndex, 0, ...itemsToMove); workingList = remainingItems; renderList(); }
+            } else if (draggedIndex !== droppedIndex) {
                 const itemToMove = workingList[draggedIndex];
-                
                 const tempArray = [...workingList];
                 tempArray.splice(draggedIndex, 1);
-
                 let targetIndex = tempArray.indexOf(droppedItem);
-
                 tempArray.splice(targetIndex, 0, itemToMove);
-                
-                workingList = tempArray;
-                renderList();
+                workingList = tempArray; renderList();
             }
         });
     }
@@ -817,7 +821,6 @@ function renderTocManagerPopup() {
         renderList();
         if (count === 0) alert('해당 태그를 가진 캐릭터가 없습니다.');
     });
-
     $('#toc_move_execute_btn').click(() => {
         const targetIdxStr = $('#toc_move_target_select').val();
         if (targetIdxStr === "") return alert('이동할 위치(구분선)를 선택하세요.');
@@ -834,16 +837,19 @@ function renderTocManagerPopup() {
     });
 
     $('.reset-toc-btn').click(() => {
-        if(confirm('이 폴더(목록)의 순서 변경 내역을 삭제하고 기본 상태로 되돌리시겠습니까?\n\n(구분선과 사용자 지정 순서가 모두 사라집니다)')) {
+        if(confirm(`[${contextTagName}] 순서 변경 내역을 삭제하고 초기화하시겠습니까?`)) {
+            if (isConfigMismatch) {
+                alert('현재 폴더 인식이 불안정하여, 안전을 위해 부모 설정 삭제를 방지했습니다.\n팝업을 다시 열어 확인해주세요.');
+                closePopup();
+                return;
+            }
+            
             delete settings.toc[contextId];
             saveSettingsDebounced();
             
             closePopup();
-
             hideFoldersOnListUpdate();
-
             $('#character_sort_order').trigger('change');
-
             alert('초기화되었습니다.');
         }
     });
@@ -865,7 +871,7 @@ function renderTocManagerPopup() {
         settings.toc[contextId] = { 
             excludeFolders, 
             items: saveItems,
-            folderName: contextName 
+            folderName: contextTagName 
         };
         saveSettingsDebounced();
         
@@ -876,48 +882,102 @@ function renderTocManagerPopup() {
 }
 
 function onExportSettings() {
-    const jsonStr = JSON.stringify(settings, null, 2);
+    const contextId = getCurrentContextId();
+    let currentToc = settings.toc[contextId];
+    let isAutoGenerated = false;
+
+    if (!currentToc) {
+        const $container = $('#rm_print_characters_block');
+        const items = getDomItems($container);
+        
+        const capturedItems = items.map(item => ({
+            type: item.type,
+            id: item.id
+        }));
+
+        currentToc = {
+            excludeFolders: true, 
+            folderName: contextId === 'root' ? 'Main List' : contextId,
+            items: capturedItems
+        };
+        isAutoGenerated = true;
+    }
+
+    const exportData = {
+        version: 2,
+        type: 'context_backup', 
+        contextId: contextId,
+        timestamp: new Date().toLocaleString(),
+        data: currentToc
+    };
+
+    const jsonStr = JSON.stringify(exportData, null, 2);
     $('#setting_backup_area').val(jsonStr);
+
+    let msg = `[${currentToc.folderName || contextId}] 목록의 순서 데이터가 추출되었습니다.`;
+    if (isAutoGenerated) {
+        msg += '\n(주의: 아직 저장되지 않은 상태라 현재 화면 순서를 기반으로 생성했습니다)';
+    }
+    alert(msg);
 }
 
 function onImportSettings() {
     const jsonStr = $('#setting_backup_area').val().trim();
-    if (!jsonStr) { alert('가져올 설정 내용이 없습니다.'); return; }
-
-    if (!confirm('현재 설정을 백업된 내용으로 덮어씌웁니다.\n\n* 중요: 폴더 ID가 다른 경우, 저장된 "폴더 이름"을 기준으로 자동으로 매칭을 시도합니다.')) return;
+    if (!jsonStr) { alert('내용이 없습니다.'); return; }
 
     try {
         const parsed = JSON.parse(jsonStr);
-        if (typeof parsed.enabled === 'undefined') throw new Error('올바르지 않은 설정 포맷 (enabled 누락)');
-        
-        if (!parsed.toc || typeof parsed.toc !== 'object') parsed.toc = {};
 
-        const newToc = {};
-        for (const [key, val] of Object.entries(parsed.toc)) {
-            if (key.startsWith('folder_')) {
-                const oldId = key.replace('folder_', '');
+        // 1. 신규 방식: 특정 목록(폴더)만 백업한 데이터인 경우
+        if (parsed.type === 'context_backup' && parsed.contextId && parsed.data) {
+            const targetId = parsed.contextId;
+            const targetName = parsed.data.folderName || targetId;
+
+            if (confirm(`[${targetName}] 목록의 설정을 불러옵니다.\n\n이 작업은 다른 폴더의 설정은 건드리지 않고,\n현재 보고 있는 목록(또는 지정된 폴더)의 순서만 변경합니다.\n진행하시겠습니까?`)) {
                 
-                const exists = tags.some(t => t.id === oldId);
-                
-                if (exists) {
-                    newToc[key] = val;
-                } else if (val.folderName) {
-                    const match = tags.find(t => t.name === val.folderName && t.folder_type);
-                    if (match) {
-                        console.log(`[FolderHider] 폴더 ID 변경 감지: "${val.folderName}" (${oldId} -> ${match.id})`);
-                        newToc['folder_' + match.id] = val; 
-                    } else {
-                        newToc[key] = val;
-                    }
-                } else {
-                    newToc[key] = val;
+                settings.toc[targetId] = parsed.data;
+                extension_settings[extensionName] = settings;
+                saveSettingsDebounced();
+
+                if (getCurrentContextId() === targetId) {
+                    hideFoldersOnListUpdate();
                 }
-            } else {
 
-                newToc[key] = val;
+                alert(`[${targetName}] 설정이 성공적으로 적용되었습니다.`);
+            }
+            return;
+        }
+
+        // 2. 구형 방식: 전체 설정 백업본인 경우 (기존 호환성 유지)
+        if (!confirm('경고: 전체 설정 백업본으로 보입니다.\n\n이 데이터를 불러오면 "모든 폴더"의 숨김 설정과 순서가\n이 파일의 내용으로 완전히 덮어씌워집니다.\n\n진행하시겠습니까?')) return;
+        
+        const fixItems = (items) => {
+            if (!Array.isArray(items)) return [];
+            return items.map(item => {
+                if (item.type === 'char') {
+                    let found = characters.find(c => c.avatar === item.id);
+                    if (!found) {
+                        let guessName = item.id;
+                        if (guessName.includes('_') && !guessName.includes('.')) {
+                            guessName = guessName.substring(0, guessName.lastIndexOf('_'));
+                        }
+                        found = characters.find(c => c.name === guessName || c.name === item.id);
+                    }
+                    if (found) {
+                        return { type: 'char', id: found.avatar }; 
+                    }
+                }
+                return item;
+            });
+        };
+
+        if (parsed.toc) {
+            for (const key in parsed.toc) {
+                if (parsed.toc[key].items) {
+                    parsed.toc[key].items = fixItems(parsed.toc[key].items);
+                }
             }
         }
-        parsed.toc = newToc;
 
         settings = parsed;
         extension_settings[extensionName] = settings;
@@ -925,13 +985,13 @@ function onImportSettings() {
 
         $('#folder_hider_enable_toggle').prop('checked', settings.enabled);
         renderHiddenFolderList();
-        
         hideFoldersOnListUpdate(); 
         
-        alert('설정을 성공적으로 불러왔습니다.\n(폴더 이름 기반 자동 매칭 완료)');
+        alert('전체 설정 불러오기 완료.');
+
     } catch (e) {
         console.error(e);
-        alert('설정 불러오기 실패:\nJSON 형식을 확인하세요.\n' + e.message);
+        alert('설정 형식이 잘못되었습니다. JSON 형식이 맞는지 확인해주세요.');
     }
 }
 
@@ -1018,6 +1078,32 @@ function renderHiddenFolderList() {
 
     injectCssRules(); 
     connectObserver(); 
+	
+    // 다음 업데이트 때: CURRENT_NOTICE_ID를 v2로 바꾸고, CURRENT_NOTICE_HTML에 새 내용을 적기만 하면 됩니다.
+    const CURRENT_NOTICE_ID = 'patch_2026_01_fix_v1'; 
+
+    // 2. 이번 공지사항의 내용 (HTML 태그 사용 가능)
+    const CURRENT_NOTICE_HTML = `
+        <p>
+            최근 <b>폴더 간 목차 꼬임 현상</b> 및 <b>백업 오류</b>가 수정되었습니다.<br>
+            이전 버전에서 목차가 섞였다면, <b>[목차/순서 설정]</b> 탭에서 
+            <b>'초기화'</b> 버튼을 눌러 정리한 뒤 다시 설정해주시기 바랍니다.
+        </p>
+    `;
+
+    // 3. 로직 실행
+    if (settings.last_notice_id !== CURRENT_NOTICE_ID) {
+        
+        $('#update_notice_text_area').html(CURRENT_NOTICE_HTML);
+        $('#update_notice_box').slideDown();
+        
+        $('#close_update_notice_btn').off('click').on('click', function() {
+            $('#update_notice_box').slideUp();
+            settings.last_notice_id = CURRENT_NOTICE_ID; 
+            saveSettingsDebounced();
+        });
+    }
+
     hideFoldersOnListUpdate(); 
 
 })();
