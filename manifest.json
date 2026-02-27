@@ -1,11 +1,11 @@
 {
-    "display_name": "캐릭터 폴더 숨기기",
+    "display_name": "타이디",
     "loading_order": 210,
     "requires": [],
     "optional": [],
     "js": "index.js",
     "settings": "settings.html",
     "author": "SillyGgu",
-    "version": "2.5.0",
+    "version": "3.0.0",
     "homePage": "https://github.com/SillyGgu/FolderHider"
 }
