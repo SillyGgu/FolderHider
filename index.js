@@ -102,17 +102,26 @@ function injectCssRules() {
 
         
         #persona_folder_bar {
-            display: flex; flex-wrap: wrap; gap: 5px; padding: 5px;
+            display: flex; flex-wrap: nowrap; gap: 5px; padding: 5px;
             background: var(--fh-hover-bg, rgba(0,0,0,0.03));
             border-bottom: 1px solid var(--fh-border, #ccc);
             margin-bottom: 10px; align-items: center;
+            overflow-x: auto;
+            scrollbar-width: none; 
+            -ms-overflow-style: none; 
         }
+        #persona_folder_bar::-webkit-scrollbar {
+            display: none; 
+        }
+        
         .persona-folder-tab {
             padding: 4px 10px; border-radius: 4px; cursor: pointer;
             font-size: 0.85em; background: var(--fh-bg, #eee);
             border: 1px solid var(--fh-border, transparent);
             color: var(--fh-text); opacity: 0.8;
             transition: all 0.2s; display: flex; align-items: center; gap: 5px;
+            flex-shrink: 0; 
+            white-space: nowrap; 
         }
         .persona-folder-tab:hover {
             opacity: 1; background: var(--fh-hover-bg, #ddd); border-color: var(--fh-accent);
@@ -124,6 +133,7 @@ function injectCssRules() {
         }
         .persona-folder-settings-btn {
             margin-left: auto; cursor: pointer; padding: 5px; opacity: 0.6; color: var(--fh-text);
+            flex-shrink: 0; 
         }
         .persona-folder-settings-btn:hover { opacity: 1; color: var(--fh-accent); }
         
@@ -224,7 +234,18 @@ function injectCssRules() {
         .toc-btn:hover { background: var(--fh-accent); color: #fff; border-color: var(--fh-accent); }
         .toc-btn.del { color: #d63031; border-color: #fab1a0; background: #fff0f0; }
         .toc-btn.del:hover { background: #d63031; color: #fff; }
-        .toc-btn.info { position: relative; }
+        
+        .toc-btn.info { 
+            position: relative;
+            color: #0984e3; 
+            border-color: #74b9ff; 
+            background: #f0f8ff; 
+        }
+        .toc-btn.info:hover {
+            background: #0984e3; 
+            color: #fff; 
+            border-color: #0984e3; 
+        }
         
         .toc-tooltip {
             display: none; position: absolute; bottom: 30px; right: 0; width: 280px;
@@ -716,45 +737,44 @@ function renderTocManagerPopup() {
     const displayTitle = isConfigMismatch 
         ? `${contextTagName} (주의: 상위 설정 분리됨)` 
         : `${contextTagName} - 목차 관리`;
-
-    const popupHtml = `
+const popupHtml = `
         <div class="toc-manager-overlay" id="toc_manager_popup">
 			<div class="toc-manager-modal" id="toc_manager_modal_inner">
-				<div class="toc-header">
-					<span>${displayTitle}</span>
-                    <i class="fa-solid fa-xmark close-toc-btn" style="cursor:pointer;"></i>
+				<div class="toc-header" style="display:flex; align-items:center; justify-content:space-between; padding: 18px 24px; border-bottom: 1px solid var(--fh-border);">
+					<span style="font-size:1.1rem; font-weight:700; letter-spacing:-0.3px;">${displayTitle}</span>
+                    <i class="fa-solid fa-xmark close-toc-btn" style="cursor:pointer; font-size:1.2rem; opacity:0.6; transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6"></i>
                 </div>
                 
-                <div class="toc-toolbar">
-                    <div class="toc-toolbar-row">
-                        <button id="toc_select_all_btn">전체 선택</button>
-                        <button id="toc_deselect_all_btn">선택 해제</button>
-                        <div style="border-left:1px solid #ccc; height:20px; margin:0 5px;"></div>
-                        <input type="text" id="toc_tag_filter_input" list="toc_tag_datalist" placeholder="태그 선택 또는 검색..." style="width:140px;">
+                <div class="toc-toolbar" style="padding: 16px 24px; border-bottom: 1px solid var(--fh-border); display:flex; flex-direction:column; gap:10px;">
+                    <div class="toc-toolbar-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <button id="toc_select_all_btn" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">전체 선택</button>
+                        <button id="toc_deselect_all_btn" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">선택 해제</button>
+                        <div style="width:1px; height:20px; background:var(--fh-border); margin:0 4px;"></div>
+                        <input type="text" id="toc_tag_filter_input" list="toc_tag_datalist" placeholder="태그 선택 또는 검색..." style="width:160px; padding: 7px 12px; border-radius:8px; font-size:0.9rem;">
                         <datalist id="toc_tag_datalist">${tagOptionsHtml}</datalist>
-                        <button id="toc_select_by_tag_btn">태그로 선택</button>
+                        <button id="toc_select_by_tag_btn" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">태그로 선택</button>
                     </div>
-                    <div class="toc-toolbar-row">
-                        <span>선택한 항목을:</span>
-                        <select id="toc_move_target_select" style="min-width:150px;">
+                    <div class="toc-toolbar-row" style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:0.9rem; opacity:0.7; white-space:nowrap;">선택한 항목을:</span>
+                        <select id="toc_move_target_select" style="flex:1; min-width:150px; padding: 7px 10px; border-radius:8px; font-size:0.9rem;">
                             <option value="">(이동할 구분선 선택)</option>
                         </select>
-                        <button id="toc_move_execute_btn">▼ 여기로 이동</button>
+                        <button id="toc_move_execute_btn" style="padding: 7px 18px; border-radius:8px; font-size:0.9rem; font-weight:600; white-space:nowrap;">▼ 여기로 이동</button>
                     </div>
                 </div>
 
-                <div class="toc-body" id="toc_items_list">
-                    <div class="toc-checkbox-row" style="margin-bottom:10px;">
-                        <label>
+                <div class="toc-body" id="toc_items_list" style="padding: 16px 24px; overflow-y:auto;">
+                    <div class="toc-checkbox-row" style="margin-bottom:12px; padding: 10px 14px; border-radius:8px; background:var(--fh-hover-bg); border:1px solid var(--fh-border);">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.9rem; font-weight:600;">
                             <input type="checkbox" id="toc_exclude_folders" ${savedConfig.excludeFolders ? 'checked' : ''}>
                             폴더 제외하기 (폴더는 항상 맨 위에 고정, 정렬 제외)
                         </label>
                     </div>
                 </div>
-                <div class="toc-footer">
-                    <button class="lavender-btn reset-toc-btn" style="width: auto; padding: 0 15px; background: #ff7675 !important; color: #fff !important; margin-right: auto;">↻ 데이터 삭제(초기화)</button>
-                    <button class="lavender-btn add-sep-btn" style="width: auto; padding: 0 15px;">+ 구분선 추가</button>
-                    <button class="lavender-btn save-toc-btn" style="width: auto; padding: 0 15px;">저장 및 적용</button>
+                <div class="toc-footer" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; padding: 14px 24px; border-top: 1px solid var(--fh-border);">
+                    <button class="lavender-btn reset-toc-btn" style="width: auto; padding: 7px 16px; font-size:0.9rem; background: #ff7675 !important; color: #fff !important; margin-right: auto;">↻ 데이터 삭제(초기화)</button>
+                    <button class="lavender-btn add-sep-btn" style="width: auto; padding: 7px 16px; font-size:0.9rem;">+ 구분선 추가</button>
+                    <button class="lavender-btn save-toc-btn" style="width: auto; padding: 7px 16px; font-size:0.9rem;">저장 및 적용</button>
                 </div>
             </div>
         </div>
@@ -819,7 +839,6 @@ function renderTocManagerPopup() {
             const isHeader = item.type === 'header';
             const name = isHeader ? `[구분선] ${item.text}` : item.name;
             const iconClass = isHeader ? 'fa-heading' : (item.type === 'folder' ? 'fa-folder' : 'fa-user');
-            // [수정 4] checked 및 selected 클래스 적용 확인
             const isChecked = item._selected ? 'checked' : '';
             const selectedClass = item._selected ? 'selected' : '';
             const hiddenClass = isHidden ? 'is-hidden' : '';
@@ -1370,17 +1389,17 @@ function openPersonaBulkManager() {
     const $overlay = $('<div class="toc-manager-overlay" id="persona_manager_popup"></div>');
     const folderOptions = Object.keys(settings.persona_folders).map(f => `<option value="${f}">${f}</option>`).join('');
     
-    const popupHtml = `
+const popupHtml = `
         <div class="toc-manager-modal" id="pm_modal_inner" style="max-width: 750px;">
-            <div class="toc-header">
-                <span>페르소나 폴더 일괄 관리</span>
-                <i class="fa-solid fa-xmark close-popup-btn" style="cursor:pointer;"></i>
+            <div class="toc-header" style="display:flex; align-items:center; justify-content:space-between; padding: 18px 24px; border-bottom: 1px solid var(--fh-border);">
+                <span style="font-size:1.1rem; font-weight:700; letter-spacing:-0.3px;">페르소나 폴더 일괄 관리</span>
+                <i class="fa-solid fa-xmark close-popup-btn" style="cursor:pointer; font-size:1.2rem; opacity:0.6; transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6"></i>
             </div>
             
-            <div class="toc-toolbar">
-                <div class="toc-toolbar-row">
-                    <input type="text" id="pm_search_input" placeholder="이름 및 정보 검색..." style="flex:1;">
-                    <select id="pm_filter_lang" style="min-width: 110px;">
+            <div class="toc-toolbar" style="padding: 16px 24px; border-bottom: 1px solid var(--fh-border); display:flex; flex-direction:column; gap:10px;">
+                <div class="toc-toolbar-row" style="display:flex; gap:8px; align-items:center;">
+                    <input type="text" id="pm_search_input" placeholder="이름 및 정보 검색..." style="flex:1; padding: 8px 12px; border-radius:8px; font-size:0.9rem;">
+                    <select id="pm_filter_lang" style="min-width: 110px; padding: 8px 10px; border-radius:8px; font-size:0.9rem;">
                         <option value="">(모든 언어)</option>
                         <option value="ko">한국어</option>
                         <option value="ja">일본어</option>
@@ -1388,40 +1407,40 @@ function openPersonaBulkManager() {
                         <option value="en">영어</option>
                         <option value="other">기타</option>
                     </select>
-                    <select id="pm_filter_folder">
+                    <select id="pm_filter_folder" style="padding: 8px 10px; border-radius:8px; font-size:0.9rem;">
                         <option value="">(모든 위치)</option>
                         <option value="__uncategorized__">미분류만</option>
                         ${folderOptions}
                     </select>
                 </div>
-                <div class="toc-toolbar-row" style="justify-content: space-between; margin-top:5px;">
-                    <div style="display:flex; align-items:center; gap: 10px;">
-                        <button id="pm_select_all">전체선택</button>
-                        <button id="pm_deselect_all">해제</button>
-                        <label style="cursor:pointer; display:flex; align-items:center; gap:5px; font-weight:bold; color:#555;">
+                <div class="toc-toolbar-row" style="display:flex; justify-content: space-between; align-items:center; gap:10px;">
+                    <div style="display:flex; align-items:center; gap: 8px;">
+                        <button id="pm_select_all" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">전체선택</button>
+                        <button id="pm_deselect_all" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">해제</button>
+                        <div style="width:1px; height:20px; background:var(--fh-border); margin:0 4px;"></div>
+                        <label style="cursor:pointer; display:flex; align-items:center; gap:5px; font-weight:600; font-size:0.9rem; color:var(--fh-text); opacity:0.8;">
                             <input type="checkbox" id="pm_toggle_images"> 🖼️ 이미지 표시
                         </label>
                     </div>
-                    <div style="display:flex; gap:5px; align-items:center;">
-                        <span>선택항목을:</span>
-                        <select id="pm_target_folder" style="min-width:130px;">
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <span style="font-size:0.9rem; opacity:0.7; white-space:nowrap;">선택항목을:</span>
+                        <select id="pm_target_folder" style="min-width:130px; padding: 7px 10px; border-radius:8px; font-size:0.9rem;">
                             <option value="">(이동할 폴더)</option>
                             ${folderOptions}
                             <option value="__remove__">[폴더에서 제거/미분류]</option>
                         </select>
-                        <!-- 수정됨: 인라인 스타일 제거 및 lavender-btn 클래스 추가 -->
-                        <button id="pm_execute_move" class="lavender-btn" style="width: auto; padding: 0 15px;">이동 적용</button>
+                        <button id="pm_execute_move" class="lavender-btn" style="width: auto; padding: 7px 18px; font-size:0.9rem; white-space:nowrap;">이동 적용</button>
                     </div>
                 </div>
             </div>
 
-            <div class="toc-body" id="pm_list_body">
+            <div class="toc-body" id="pm_list_body" style="padding: 16px 24px; overflow-y:auto;">
                 <!-- 리스트 주입됨 -->
             </div>
             
-            <div class="toc-footer">
-                <small style="margin-right:auto; color:var(--fh-text); opacity:0.7;">* 변경 사항은 즉시 저장되며, 폴더를 이동합니다.</small>
-                <button class="lavender-btn close-popup-btn" style="width: auto; padding: 0 20px;">닫기</button>
+            <div class="toc-footer" style="display:flex; align-items:center; justify-content:flex-end; gap:10px; padding: 14px 24px; border-top: 1px solid var(--fh-border);">
+                <small style="margin-right:auto; color:var(--fh-text); opacity:0.55; font-size:0.82rem;">* 변경 사항은 즉시 저장되며, 폴더를 이동합니다.</small>
+                <button class="lavender-btn close-popup-btn" style="width: auto; padding: 7px 22px; font-size:0.9rem;">닫기</button>
             </div>
         </div>
     `;
@@ -1537,7 +1556,6 @@ function openPersonaBulkManager() {
                     ${imgHtml}
                     <div style="display:flex; flex-direction:column; flex:1; overflow:hidden;">
                         <div class="pm-name-block">
-                            <!-- 수정됨: 하드코딩된 색상 제거 후 테마 변수(--fh-text) 적용 -->
                             <span class="toc-item-name" style="font-weight:700; font-size:1.05em; color:var(--fh-text);">${p.name}</span>
                             ${addInfoHtml}
                             <div style="margin-left:auto; display:flex; gap:4px;">${folderBadges}</div>

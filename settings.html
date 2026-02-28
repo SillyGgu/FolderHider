@@ -1,13 +1,13 @@
 <div class="extension-block folderhider-settings">
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-            <b style="color: 
+            <b style="color: #9a86d3;">캐릭터 폴더 숨기기 & 목차 설정</b>
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
 
         <div class="inline-drawer-content">
             
-            
+            <!-- 탭 네비게이션 -->
             <div class="fh-tab-nav">
                 <button class="fh-tab-btn active" data-tab="tab_folder_hide">📂 폴더 숨기기</button>
                 <button class="fh-tab-btn" data-tab="tab_toc_order">🔢 목차/순서 설정</button>
@@ -15,7 +15,7 @@
             </div>
 
             <hr class="sysHR" style="margin-top:0;">
-			
+			<!-- 업데이트 알림 박스 (JS로 제어) -->
 			<div id="update_notice_box" class="notice-box" style="display:none;">
 				<div class="notice-header">
 					<i class="fa-solid fa-circle-exclamation"></i> 
@@ -29,7 +29,7 @@
 				</button>
 			</div>
 
-            
+            <!-- 탭 1: 폴더 숨기기 -->
             <div id="tab_folder_hide" class="fh-tab-content active">
                 <div class="control-group">
                     <label class="flex-container-checkbox-inline">
@@ -37,9 +37,7 @@
                         <span>기능 활성화 (숨기기 및 목차 적용)</span>
                     </label>
                 </div>
-				
                 <div class="control-group" id="theme_selector_container">
-                    
                 </div>
                 <hr class="sysHR">
 
@@ -67,7 +65,7 @@
                 </div>
             </div>
 
-            
+            <!-- 탭 2: 목차 관리 -->
             <div id="tab_toc_order" class="fh-tab-content">
                 <div class="menu-section">
                     <h3>현재 목록 목차(ToC) 관리</h3>
@@ -76,7 +74,6 @@
                         <p style="font-size:0.85em; opacity: 0.8; margin-bottom:10px;">
                             팝업창에서 <b>태그 기반 일괄 선택</b> 및 <b>구분선으로 이동</b> 기능을 사용할 수 있습니다.
                         </p>
-                        
                         <button id="open_toc_manager_btn" class="lavender-btn">
                             <i class="fa-solid fa-list-ol"></i> 현재 화면 순서/목차 편집 팝업 열기
                         </button>
@@ -87,7 +84,7 @@
                 </div>
             </div>
 
-            
+            <!-- 탭 3: 백업 및 복원 -->
             <div id="tab_backup" class="fh-tab-content">
                 <div class="menu-section">
                     <h3>설정 백업 및 복원</h3>
@@ -96,7 +93,6 @@
                         <textarea id="setting_backup_area" rows="3" placeholder="내보내기 버튼을 누르면 여기에 설정 코드가 나타납니다."></textarea>
                         <div class="button-row" style="display:flex; gap:10px;">
                             <button id="export_settings_btn" class="lavender-btn" style="flex:1;">📤 내보내기</button>
-                            
                             <button id="import_settings_btn" class="lavender-btn" style="flex:1;">📥 가져오기</button>
                         </div>
                         <small style="opacity: 0.7; margin-top:5px;">
@@ -361,9 +357,9 @@
 
 
 .notice-box {
-    background-color: 
-    border: 1px solid 
-    color: 
+    background-color: #fff4e5;
+    border: 1px solid #ffcc80;
+    color: #663c00;
     padding: 15px;
     border-radius: 8px;
     margin-bottom: 20px;
@@ -376,7 +372,7 @@
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
-    color: 
+    color: #ef6c00;
     font-weight: bold;
 }
 .notice-content p {
@@ -384,9 +380,9 @@
     line-height: 1.5;
 }
 .notice-close-btn {
-    background: 
-    border: 1px solid 
-    color: 
+    background: #fff;
+    border: 1px solid #ffb74d;
+    color: #ef6c00;
     padding: 8px 16px;
     border-radius: 6px;
     cursor: pointer;
@@ -395,7 +391,7 @@
     width: 100%;
     transition: background 0.2s;
 }
-.notice-close-btn:hover { background: 
+.notice-close-btn:hover { background: #fff3e0; }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 </style>
