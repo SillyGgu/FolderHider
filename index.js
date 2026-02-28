@@ -12,6 +12,10 @@ import {
     tags
 } from '../../../../scripts/tags.js';
 
+import {
+    themeManager
+} from './themes.js';
+
 const extensionName = 'FolderHider';
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 const STYLE_ID = 'folder-hider-css-rules';
@@ -22,7 +26,8 @@ const DEFAULT_SETTINGS = {
     hiddenFolders: [], 
     toc: {},
     persona_folders: {},
-    last_persona_folder: 'All' 
+    last_persona_folder: 'All',
+    theme: 'lavender' 
 };
 
 let settings = extension_settings[extensionName];
@@ -37,318 +42,267 @@ if (!settings || Object.keys(settings).length === 0) {
 }
 
 let mainListObserver = null;
+let personaListObserver = null;
+
 // =========================================================================
 // 1. CSS Injection
 // =========================================================================
+
 function injectCssRules() {
     $(`#${STYLE_ID}`).remove();
+    
     
     const staticCss = `
         .${HIDDEN_CLASS} {
             display: none !important;
         }
 
-        /* 캐릭터 목록 구분선 스타일 */
-        .char-list-separator {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            margin: 20px 0 10px 0;
-            padding: 5px 0;
-            color: var(--smart-theme-body-color, #888);
-            font-weight: bold;
-            font-size: 0.9em;
-            opacity: 0.9;
-            pointer-events: none;
-            position: relative;
-            flex-shrink: 0;
-            z-index: 5;
-            scroll-margin-top: 50px; /* 스크롤 시 여백 확보 */
+        
+        .folderhider-settings input[type="checkbox"],
+        .toc-manager-modal input[type="checkbox"] {
+            appearance: none; -webkit-appearance: none;
+            width: 20px; height: 20px;
+            border: 2px solid var(--fh-border, #ccc);
+            border-radius: 5px; background-color: var(--fh-bg, #fff);
+            cursor: pointer; position: relative; vertical-align: middle;
+            transition: all 0.2s ease; outline: none; margin-right: 8px; flex-shrink: 0;
         }
-        .char-list-separator::before,
-        .char-list-separator::after {
-            content: "";
-            flex: 1;
-            border-bottom: 2px solid var(--smart-theme-border-color, rgba(128,128,128,0.3));
-            margin: 0 10px;
+        .folderhider-settings input[type="checkbox"]:checked,
+        .toc-manager-modal input[type="checkbox"]:checked {
+            background-color: var(--fh-accent); border-color: var(--fh-accent);
+        }
+        .folderhider-settings input[type="checkbox"]:checked::after,
+        .toc-manager-modal input[type="checkbox"]:checked::after {
+            content: ''; position: absolute;
+            left: 5px; top: 1px; width: 5px; height: 10px;
+            border: solid #fff; border-width: 0 2.5px 2.5px 0;
+            transform: rotate(45deg);
+        }
+        .folderhider-settings input[type="checkbox"]:hover,
+        .toc-manager-modal input[type="checkbox"]:hover {
+            border-color: var(--fh-accent);
+        }
+
+        
+        .char-list-separator {
+            display: flex; align-items: center; justify-content: center;
+            width: 100%; margin: 20px 0 10px 0; padding: 5px 0;
+            color: var(--fh-text, #888); font-weight: bold; font-size: 0.9em;
+            opacity: 0.9; pointer-events: none; position: relative;
+            flex-shrink: 0; z-index: 5; scroll-margin-top: 50px;
+        }
+        .char-list-separator::before, .char-list-separator::after {
+            content: ""; flex: 1; border-bottom: 2px solid var(--fh-border, rgba(128,128,128,0.3)); margin: 0 10px;
         }
         .char-list-separator span {
-            background: var(--smart-theme-bg, transparent);
-            padding: 4px 12px;
-            border-radius: 12px;
-            border: 1px solid var(--smart-theme-border-color, rgba(128,128,128,0.2));
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            background: var(--fh-bg, transparent); padding: 4px 12px; border-radius: 12px;
+            border: 1px solid var(--fh-border, rgba(128,128,128,0.2));
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1); color: var(--fh-accent);
         }
 
-        /* ======================== */
-        /* 페르소나 폴더 관리 스타일 */
-        /* ======================== */
         
-        /* 폴더 탭 바 컨테이너 */
         #persona_folder_bar {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
-            padding: 5px;
-            background: rgba(0,0,0,0.03);
-            border-bottom: 1px solid var(--smart-theme-border-color, #ccc);
-            margin-bottom: 10px;
-            align-items: center;
+            display: flex; flex-wrap: wrap; gap: 5px; padding: 5px;
+            background: var(--fh-hover-bg, rgba(0,0,0,0.03));
+            border-bottom: 1px solid var(--fh-border, #ccc);
+            margin-bottom: 10px; align-items: center;
         }
-
-        /* 개별 폴더 탭 */
         .persona-folder-tab {
-            padding: 4px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.85em;
-            background: var(--smart-theme-bg, #eee);
-            border: 1px solid transparent;
-            opacity: 0.7;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 5px;
+            padding: 4px 10px; border-radius: 4px; cursor: pointer;
+            font-size: 0.85em; background: var(--fh-bg, #eee);
+            border: 1px solid var(--fh-border, transparent);
+            color: var(--fh-text); opacity: 0.8;
+            transition: all 0.2s; display: flex; align-items: center; gap: 5px;
         }
         .persona-folder-tab:hover {
-            opacity: 1;
-            background: var(--smart-theme-btn-bg-hover, #ddd);
+            opacity: 1; background: var(--fh-hover-bg, #ddd); border-color: var(--fh-accent);
         }
         .persona-folder-tab.active {
-            opacity: 1;
-            font-weight: bold;
-            background: var(--smart-theme-btn-bg, #bfaee3);
-            color: var(--smart-theme-btn-text, #fff);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            opacity: 1; font-weight: bold;
+            background: var(--fh-btn-bg, #bfaee3); color: var(--fh-btn-text, #fff);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2); border-color: var(--fh-accent);
         }
-
-        /* 폴더 관리 버튼 (톱니바퀴) */
         .persona-folder-settings-btn {
-            margin-left: auto;
-            cursor: pointer;
-            padding: 5px;
-            opacity: 0.6;
+            margin-left: auto; cursor: pointer; padding: 5px; opacity: 0.6; color: var(--fh-text);
         }
-        .persona-folder-settings-btn:hover {
-            opacity: 1;
-        }
+        .persona-folder-settings-btn:hover { opacity: 1; color: var(--fh-accent); }
         
-        /* 분류용 팝업 스타일 */
+        
         .toc-manager-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.6); z-index: 9999;
             display: flex; justify-content: center; align-items: center;
-            font-family: 'Pretendard', sans-serif;
+            font-family: 'Pretendard', sans-serif; color: var(--fh-text);
         }
         .toc-manager-modal {
-            background: #fff; width: 90%; max-width: 600px; max-height: 85vh;
-            border-radius: 12px; display: flex; flex-direction: column;
-            overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.3); color: #333;
+            background: var(--fh-bg, #fff); width: 90%; max-width: 600px; max-height: 85vh;
+            border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3); color: var(--fh-text); border: 1px solid var(--fh-border);
         }
         .toc-header {
-            padding: 15px 20px; background: #e0e0f0; border-bottom: 1px solid #ccc;
+            padding: 15px 20px; background: var(--fh-secondary, #e0e0f0); 
+            border-bottom: 1px solid var(--fh-border);
             display: flex; justify-content: space-between; align-items: center; font-weight: bold;
+            color: var(--fh-text);
         }
-        
         .toc-toolbar {
-            padding: 10px; background: #f0f2f5; border-bottom: 1px solid #ddd;
-            display: flex; flex-direction: column; gap: 8px;
-            font-size: 0.85rem;
+            padding: 10px; background: var(--fh-hover-bg, #f0f2f5); 
+            border-bottom: 1px solid var(--fh-border);
+            display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem;
         }
         .toc-toolbar-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .toc-toolbar select, .toc-toolbar input {
-            padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem;
+            padding: 4px 8px; border: 1px solid var(--fh-border); 
+            background: var(--fh-bg); color: var(--fh-text);
+            border-radius: 4px; font-size: 0.85rem;
         }
-        .toc-toolbar button {
-            padding: 4px 10px; border: none; border-radius: 4px;
-            background: #d9cff5; color: #3a2e5f; cursor: pointer; font-weight: 600;
+        .toc-toolbar button, .toc-footer button {
+            padding: 4px 10px; border: 1px solid var(--fh-border); 
+            border-radius: 4px; background: var(--fh-btn-bg); 
+            color: var(--fh-btn-text); cursor: pointer; font-weight: 600;
         }
-        .toc-toolbar button:hover { background: #c5b8e8; }
-
-        .toc-body { flex: 1; overflow-y: auto; padding: 10px; background: #f8f8fc; }
-        .toc-footer { padding: 15px; background: #fff; border-top: 1px solid #ddd; display: flex; gap: 10px; justify-content: flex-end; }
+        .toc-toolbar button:hover, .toc-footer button:hover { filter: brightness(1.05); }
+        .toc-body { flex: 1; overflow-y: auto; padding: 10px; background: var(--fh-bg); }
+        .toc-footer { 
+            padding: 15px; background: var(--fh-bg); border-top: 1px solid var(--fh-border); 
+            display: flex; gap: 10px; justify-content: flex-end; 
+        }
+        
         
         .toc-item {
-            display: flex; align-items: center; padding: 6px 8px; background: #fff;
-            border: 1px solid #ddd; margin-bottom: 5px; border-radius: 6px;
-            transition: all 0.1s;
-            user-select: none;
-            cursor: pointer;
-            position: relative;
-            flex-wrap: nowrap; 
-            height: auto;
+            display: flex; align-items: center; padding: 6px 8px; 
+            background: var(--fh-bg); border: 1px solid var(--fh-border); 
+            margin-bottom: 5px; border-radius: 6px;
+            transition: all 0.1s; user-select: none; cursor: grab;
+            position: relative; flex-wrap: nowrap; height: auto;
+            color: var(--fh-text);
         }
-        .toc-item:hover { background: #f0f0f5; }
+        .toc-item:active { cursor: grabbing; }
+
+        
+        .toc-item.type-header {
+            background: var(--fh-secondary) !important;
+            border: 1px solid var(--fh-accent);
+            font-weight: bold;
+            color: var(--fh-accent) !important; 
+        }
+        .toc-item.type-header .toc-item-name {
+            color: inherit !important; 
+            opacity: 1;
+        }
+        
+        .toc-item:hover { background: var(--fh-hover-bg) !important; color: var(--fh-text) !important; }
         .toc-item.selected { 
-            background: #e6e0ff; 
-            border-color: #9a86d3;
+            background: var(--fh-selected-bg) !important; border-color: var(--fh-accent) !important;
+            box-shadow: 0 0 0 1px var(--fh-accent) inset; color: var(--fh-text) !important;
+        }
+        .toc-item.type-header.selected { background: var(--fh-btn-grad-1) !important; }
+
+        
+        .toc-item.dragging {
+            opacity: 0.5;
+            background: var(--fh-secondary) !important;
+            border: 2px dashed var(--fh-accent) !important;
+            box-shadow: 0 5px 10px rgba(0,0,0,0.1);
+        }
+        .toc-item.drag-over {
+            border-top: 3px solid var(--fh-accent) !important;
+            transform: translateY(-2px);
+            transition: none;
+            box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+            z-index: 10;
         }
 
-        .toc-btn.info {
-            color: #0984e3; border-color: #74b9ff; background: #eaf4ff;
-            position: relative; 
+        .toc-item i { color: inherit; }
+        .toc-btn {
+            border: 1px solid var(--fh-border); background: var(--fh-btn-bg); 
+            color: var(--fh-btn-text); border-radius: 4px;
+            width: 24px; height: 24px; cursor: pointer;
+            display: flex; justify-content: center; align-items: center; font-size: 0.8rem;
+            transition: background 0.2s, color 0.2s;
         }
-        .toc-btn.info:hover {
-            background: #dcefff;
-            z-index: 100; 
-        }
-
+        .toc-btn:hover { background: var(--fh-accent); color: #fff; border-color: var(--fh-accent); }
+        .toc-btn.del { color: #d63031; border-color: #fab1a0; background: #fff0f0; }
+        .toc-btn.del:hover { background: #d63031; color: #fff; }
+        .toc-btn.info { position: relative; }
+        
         .toc-tooltip {
-            display: none;
-            position: absolute;
-            bottom: 30px;
-            right: 0; 
-            width: 280px;
-            background: #fff;
-            border: 1px solid #b2bec3;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
-            padding: 12px;
-            border-radius: 8px;
-            z-index: 9999;
-            text-align: left;
-            white-space: normal;
-            pointer-events: none;
-            cursor: default;
+            display: none; position: absolute; bottom: 30px; right: 0; width: 280px;
+            background: var(--fh-bg); border: 1px solid var(--fh-accent);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); padding: 12px; border-radius: 8px;
+            z-index: 9999; text-align: left; white-space: normal;
+            pointer-events: none; cursor: default; color: var(--fh-text);
         }
         .toc-tooltip::after {
-            content: "";
-            position: absolute;
-            top: 100%;
-            right: 8px;
-            border-width: 6px;
-            border-style: solid;
-            border-color: #fff transparent transparent transparent;
+            content: ""; position: absolute; top: 100%; right: 8px;
+            border-width: 6px; border-style: solid;
+            border-color: var(--fh-accent) transparent transparent transparent;
         }
-        .toc-btn.info:hover .toc-tooltip {
-            display: block;
-            animation: fadeIn 0.2s ease;
-        }
+        .toc-btn.info:hover .toc-tooltip { display: block; animation: fadeIn 0.2s ease; }
 
-        .toc-tags-row { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #eee; }
+        .toc-tags-row { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed var(--fh-border); }
         .toc-tag-pill {
-            display: inline-block;
-            background: #f1f2f6;
-            border: 1px solid #dfe4ea;
-            border-radius: 4px;
-            padding: 1px 6px;
-            margin: 0 4px 4px 0;
-            font-size: 0.75rem;
-            color: #57606f;
+            display: inline-block; background: var(--fh-hover-bg); border: 1px solid var(--fh-border);
+            border-radius: 4px; padding: 1px 6px; margin: 0 4px 4px 0; font-size: 0.75rem; color: var(--fh-text);
         }
-        .toc-desc-text {
-            color: #636e72;
-            font-size: 0.85rem;
-            line-height: 1.4;
-            font-style: normal;
-        }
+        .toc-desc-text { color: var(--fh-text); opacity: 0.8; font-size: 0.85rem; line-height: 1.4; }
         
-        .toc-item-checkbox { margin-right: 10px; transform: scale(1.2); cursor: pointer; pointer-events: none; }
+        .toc-item-checkbox { pointer-events: auto; }
         .toc-item-name { flex: 1; margin-left: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
         .toc-controls { display: flex; gap: 4px; margin-left: 10px; align-items: center; }
-        .toc-btn {
-            border: 1px solid #ccc; background: #f0f0f0; border-radius: 4px;
-            width: 24px; height: 24px; cursor: pointer;
-            display: flex; justify-content: center; align-items: center; color: #555; font-size: 0.8rem;
-        }
-        .toc-btn:hover { background: #e0e0e0; }
-        .toc-btn.del { color: #d63031; border-color: #fab1a0; background: #fff0f0; }
 
-        /* 페르소나 UI 인젝션용 */
         #persona_bulk_manage_btn {
-            cursor: pointer;
-            margin-right: 5px;
-            color: var(--smart-theme-body-color, #888);
-            transition: color 0.2s;
+            cursor: pointer; margin-right: 5px; color: var(--fh-text); transition: color 0.2s;
         }
-        #persona_bulk_manage_btn:hover {
-            color: var(--smart-theme-btn-bg, #9a86d3);
-        }
+        #persona_bulk_manage_btn:hover { color: var(--fh-accent); }
         
-        /* 페르소나 폴더 배지 */
         .persona-folder-badge {
-            font-size: 0.75rem;
-            background: #dfe6e9;
-            color: #636e72;
-            padding: 2px 6px;
-            border-radius: 4px;
-            margin-left: 5px;
+            font-size: 0.75rem; background: var(--fh-secondary); color: var(--fh-text);
+            padding: 2px 6px; border-radius: 4px; margin-left: 5px;
         }
-		/* 페르소나 팝업 추가 개선 UI */
         .pm-avatar-img {
-            width: 40px; height: 40px;
-            border-radius: 8px; object-fit: cover;
-            margin-right: 12px;
-            border: 1px solid var(--smart-theme-border-color, #ccc);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            background: #fff;
+            width: 40px; height: 40px; border-radius: 8px; object-fit: cover;
+            margin: 0 10px 0 5px; border: 1px solid var(--fh-border);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1); background: #fff;
         }
-        .pm-name-block {
-            display: flex; align-items: center; flex: 1; flex-wrap: wrap; gap: 8px;
-        }
+        .pm-name-block { display: flex; align-items: center; flex: 1; flex-wrap: wrap; gap: 8px; }
         .pm-add-info {
-            font-size: 0.75rem; color: #4a5568;
-            background: #e2e8f0; padding: 2px 8px;
-            border-radius: 6px; 
-            border: 1px solid #cbd5e0;
-            white-space: nowrap;
+            font-size: 0.75rem; color: var(--fh-text); opacity: 0.8;
+            background: var(--fh-secondary); padding: 2px 8px;
+            border-radius: 6px; border: 1px solid var(--fh-border); white-space: nowrap;
         }
 
-        /* 점프 버튼 및 메뉴 스타일 */
         #fh_jump_btn {
-            position: absolute;
-            bottom: 15px;
-            right: 25px;
-            width: 32px; height: 32px;
-            background: rgba(0,0,0,0.4);
-            color: #fff;
-            border-radius: 50%;
-            display: none; 
-            justify-content: center; align-items: center;
-            cursor: pointer;
-            z-index: 200;
-            opacity: 0.5;
-            transition: all 0.2s;
-            backdrop-filter: blur(2px);
+            position: absolute; bottom: 15px; right: 25px; width: 32px; height: 32px;
+            background: var(--fh-bg); color: var(--fh-text); border: 1px solid var(--fh-border);
+            border-radius: 50%; display: none; justify-content: center; align-items: center;
+            cursor: pointer; z-index: 200; opacity: 0.8; transition: all 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
-        #fh_jump_btn:hover, #fh_jump_btn.active { opacity: 1; background: var(--smart-theme-btn-bg, #9a86d3); transform: scale(1.1); }
-        
+        #fh_jump_btn:hover, #fh_jump_btn.active { 
+            opacity: 1; background: var(--fh-accent); color: #fff;
+            transform: scale(1.1); border-color: var(--fh-accent);
+        }
         #fh_jump_menu {
-            position: absolute;
-            bottom: 55px;
-            right: 25px;
-            background: var(--smart-theme-bg, #fff);
-            border: 1px solid var(--smart-theme-border-color, #ccc);
-            border-radius: 8px;
-            padding: 6px;
-            display: none;
-            flex-direction: column;
-            gap: 4px;
-            z-index: 201;
+            position: absolute; bottom: 55px; right: 25px;
+            background: var(--fh-bg); border: 1px solid var(--fh-border);
+            border-radius: 8px; padding: 6px; display: none;
+            flex-direction: column; gap: 4px; z-index: 201;
             box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            max-height: 60vh;
-            overflow-y: auto;
-            min-width: 160px;
-            font-size: 0.85rem;
+            max-height: 60vh; overflow-y: auto;
+            min-width: 160px; font-size: 0.85rem; color: var(--fh-text);
         }
         .fh-jump-item {
-            padding: 6px 10px;
-            cursor: pointer;
-            border-radius: 4px;
-            color: var(--smart-theme-body-color, #333);
-            border-bottom: 1px solid transparent;
-            display: flex; align-items: center;
+            padding: 6px 10px; cursor: pointer; border-radius: 4px;
+            color: var(--fh-text); border-bottom: 1px solid transparent; display: flex; align-items: center;
         }
-        .fh-jump-item:hover {
-            background: var(--smart-theme-btn-bg-hover, #eee);
-            font-weight: bold;
-        }
+        .fh-jump-item:hover { background: var(--fh-hover-bg); font-weight: bold; color: var(--fh-accent); }
         .fh-jump-item i { margin-right: 6px; font-size: 0.8em; opacity: 0.7; }
     `;
     
     const $style = $(`<style id="${STYLE_ID}">`).text(staticCss);
     $('head').append($style);
 }
+
 
 // =========================================================================
 // 2. Logic: 컨텍스트 식별 및 DOM 획득
@@ -716,21 +670,17 @@ function renderTocManagerPopup() {
     const realConfigItems = workingConfigItems.filter(i => i.type !== 'header');
     if (currentItems.length > 0 && realConfigItems.length > 0) {
         const domKeySet = new Set(currentItems.map(i => `${i.type}_${i.id}`));
-        
         let matchCount = realConfigItems.filter(i => domKeySet.has(`${i.type}_${i.id}`)).length;
-        
         if (matchCount === 0) {
             const domNameSet = new Set(currentItems.map(i => i.name));
             matchCount += realConfigItems.filter(i => domNameSet.has(i.id)).length;
         }
-
         if (matchCount === 0) {
-            console.warn(`[FolderHider] Context mismatch detected in Popup. Ignoring saved config for safety.`);
+            console.warn(`[FolderHider] Context mismatch detected in Popup.`);
             workingConfigItems = []; 
             isConfigMismatch = true;
         }
     }
-    // =========================================================================
 
     let workingList = [];
     const currentItemMap = new Map();
@@ -769,9 +719,9 @@ function renderTocManagerPopup() {
 
     const popupHtml = `
         <div class="toc-manager-overlay" id="toc_manager_popup">
-            <div class="toc-manager-modal" id="toc_manager_modal_inner">
-                <div class="toc-header">
-                    <span>${displayTitle}</span>
+			<div class="toc-manager-modal" id="toc_manager_modal_inner">
+				<div class="toc-header">
+					<span>${displayTitle}</span>
                     <i class="fa-solid fa-xmark close-toc-btn" style="cursor:pointer;"></i>
                 </div>
                 
@@ -794,7 +744,7 @@ function renderTocManagerPopup() {
                 </div>
 
                 <div class="toc-body" id="toc_items_list">
-                    <div class="toc-checkbox-row">
+                    <div class="toc-checkbox-row" style="margin-bottom:10px;">
                         <label>
                             <input type="checkbox" id="toc_exclude_folders" ${savedConfig.excludeFolders ? 'checked' : ''}>
                             폴더 제외하기 (폴더는 항상 맨 위에 고정, 정렬 제외)
@@ -802,9 +752,9 @@ function renderTocManagerPopup() {
                     </div>
                 </div>
                 <div class="toc-footer">
-                    <button class="lavender-btn reset-toc-btn" style="width: auto; padding: 0 15px; background: #ff7675; color: #fff; margin-right: auto;">↻ 데이터 삭제(초기화)</button>
+                    <button class="lavender-btn reset-toc-btn" style="width: auto; padding: 0 15px; background: #ff7675 !important; color: #fff !important; margin-right: auto;">↻ 데이터 삭제(초기화)</button>
                     <button class="lavender-btn add-sep-btn" style="width: auto; padding: 0 15px;">+ 구분선 추가</button>
-                    <button class="lavender-btn save-toc-btn" style="width: auto; padding: 0 15px; background: #a29bfe; color: #fff;">저장 및 적용</button>
+                    <button class="lavender-btn save-toc-btn" style="width: auto; padding: 0 15px;">저장 및 적용</button>
                 </div>
             </div>
         </div>
@@ -869,7 +819,9 @@ function renderTocManagerPopup() {
             const isHeader = item.type === 'header';
             const name = isHeader ? `[구분선] ${item.text}` : item.name;
             const iconClass = isHeader ? 'fa-heading' : (item.type === 'folder' ? 'fa-folder' : 'fa-user');
+            // [수정 4] checked 및 selected 클래스 적용 확인
             const isChecked = item._selected ? 'checked' : '';
+            const selectedClass = item._selected ? 'selected' : '';
             const hiddenClass = isHidden ? 'is-hidden' : '';
             
             let infoBtnHtml = '';
@@ -893,7 +845,7 @@ function renderTocManagerPopup() {
             }
 
             const html = `
-                <div class="toc-item ${isHeader ? 'type-header' : 'type-' + item.type} ${hiddenClass}" 
+                <div class="toc-item ${isHeader ? 'type-header' : 'type-' + item.type} ${hiddenClass} ${selectedClass}" 
                      data-index="${index}" 
                      draggable="true">
                     <input type="checkbox" class="toc-item-checkbox" ${isChecked}>
@@ -915,9 +867,21 @@ function renderTocManagerPopup() {
     }
 
     function bindItemEvents() {
-        $('.toc-item-checkbox').change(function(e) {
-            workingList[$(this).closest('.toc-item').data('index')]._selected = $(this).is(':checked');
+        $list.find('.toc-item').off('click').on('click', function(e) {
+            if ($(e.target).is('input, button, .toc-btn, .toc-btn *, [contenteditable="true"]')) return;
+            const $checkbox = $(this).find('.toc-item-checkbox');
+            $checkbox.prop('checked', !$checkbox.prop('checked')).trigger('change');
         });
+
+        $list.find('.toc-item-checkbox').off('change').on('change', function(e) {
+            const $item = $(this).closest('.toc-item');
+            const idx = $item.data('index');
+            const isChecked = $(this).is(':checked');
+            workingList[idx]._selected = isChecked;
+            if (isChecked) $item.addClass('selected');
+            else $item.removeClass('selected');
+        });
+
         $list.find('.toc-btn.up').click(function(e) {
             e.stopPropagation(); 
             const idx = $(this).closest('.toc-item').data('index');
@@ -932,56 +896,90 @@ function renderTocManagerPopup() {
             e.stopPropagation();
             if (confirm('이 구분선을 삭제하시겠습니까?')) { workingList.splice($(this).closest('.toc-item').data('index'), 1); renderList(); }
         });
+        
         $list.find('.toc-item-name[contenteditable]').on('blur', function() {
             const idx = $(this).closest('.toc-item').data('index');
             const newText = $(this).text().replace('[구분선] ', '').trim();
             if (workingList[idx].type === 'header') workingList[idx].text = newText;
+            $(this).closest('.toc-item').attr('draggable', 'true');
         }).on('mousedown click', function(e) {
             $(this).closest('.toc-item').attr('draggable', 'false');
-        }).on('blur', function() {
-            $(this).closest('.toc-item').attr('draggable', 'true');
+            e.stopPropagation(); 
         });
 
+        // [드래그 앤 드롭]
         let draggedIndex = null;
+        
         $list.find('.toc-item').on('dragstart', function(e) {
             if ($(e.target).is('input, button, .toc-btn, .toc-btn *, [contenteditable="true"]')) {
                 e.preventDefault(); return;
             }
             draggedIndex = $(this).data('index');
             e.originalEvent.dataTransfer.effectAllowed = 'move';
-            e.originalEvent.dataTransfer.setData('text/plain', draggedIndex); 
+            e.originalEvent.dataTransfer.setData('text/plain', draggedIndex);
+            
             if (workingList[draggedIndex]._selected) {
-                $list.find('.toc-item').each(function() { if (workingList[$(this).data('index')]._selected) $(this).addClass('dragging'); });
-            } else { $(this).addClass('dragging'); }
+                $list.find('.toc-item').each(function() { 
+                    if (workingList[$(this).data('index')]._selected) $(this).addClass('dragging'); 
+                });
+            } else { 
+                $(this).addClass('dragging'); 
+            }
         });
-        $list.find('.toc-item').on('dragend', function() { $('.toc-item').removeClass('dragging drag-over'); draggedIndex = null; });
+
+        $list.find('.toc-item').on('dragend', function() { 
+            $('.toc-item').removeClass('dragging drag-over'); 
+            draggedIndex = null; 
+        });
+
         $list.find('.toc-item').on('dragover', function(e) {
-            e.preventDefault(); e.originalEvent.dataTransfer.dropEffect = 'move';
+            e.preventDefault(); 
+            e.originalEvent.dataTransfer.dropEffect = 'move';
+            
             $('.toc-item').removeClass('drag-over');
             const idx = $(this).data('index');
-            const isDraggingSelected = (draggedIndex !== null) && workingList[draggedIndex]._selected;
+            
+            const isDraggingSelected = (draggedIndex !== null) && workingList[draggedIndex] && workingList[draggedIndex]._selected;
             if (isDraggingSelected && workingList[idx]._selected) return;
+            if (draggedIndex === idx && !isDraggingSelected) return;
+
             $(this).addClass('drag-over');
         });
+
         $list.find('.toc-item').on('drop', function(e) {
-            e.preventDefault(); $('.toc-item').removeClass('drag-over dragging');
+            e.preventDefault(); 
+            $('.toc-item').removeClass('drag-over dragging');
+            
             const droppedIndex = $(this).data('index');
             if (draggedIndex === null || draggedIndex === undefined) return;
+            
             const droppedItem = workingList[droppedIndex]; 
             const isMultiDrag = workingList[draggedIndex]._selected;
+            
             if (isMultiDrag) {
-                if (droppedItem._selected) return;
+                if (droppedItem._selected) return; 
                 const itemsToMove = workingList.filter(item => item._selected);
                 const remainingItems = workingList.filter(item => !item._selected);
+                
                 let newIndex = remainingItems.indexOf(droppedItem);
-                if (newIndex !== -1) { remainingItems.splice(newIndex, 0, ...itemsToMove); workingList = remainingItems; renderList(); }
-            } else if (draggedIndex !== droppedIndex) {
+                if (newIndex !== -1) { 
+                    remainingItems.splice(newIndex, 0, ...itemsToMove); 
+                    workingList = remainingItems; 
+                    renderList(); 
+                }
+            } 
+            else if (draggedIndex !== droppedIndex) {
                 const itemToMove = workingList[draggedIndex];
                 const tempArray = [...workingList];
+                
                 tempArray.splice(draggedIndex, 1);
+                
                 let targetIndex = tempArray.indexOf(droppedItem);
-                tempArray.splice(targetIndex, 0, itemToMove);
-                workingList = tempArray; renderList();
+                if (targetIndex !== -1) {
+                    tempArray.splice(targetIndex, 0, itemToMove);
+                    workingList = tempArray; 
+                    renderList();
+                }
             }
         });
     }
@@ -1024,10 +1022,8 @@ function renderTocManagerPopup() {
                 closePopup();
                 return;
             }
-            
             delete settings.toc[contextId];
             saveSettingsDebounced();
-            
             closePopup();
             hideFoldersOnListUpdate();
             $('#character_sort_order').trigger('change');
@@ -1183,7 +1179,6 @@ function onImportSettings() {
 let currentPersonaFolder = 'All'; 
 
 function initPersonaExtension() {
-    // 1. 설정 데이터 초기화 확인
     if (!settings.persona_folders) {
         settings.persona_folders = {};
     }
@@ -1195,12 +1190,26 @@ function initPersonaExtension() {
     settings.persona_folders = settings.persona_folders || {};
     saveSettingsDebounced();
 
-    // 2. UI 주입 (폴더 탭 + 관리 버튼)
-    injectPersonaUI();
+    let retryCount = 0;
+    const maxRetries = 60;
 
-    // 3. 옵저버 연결
-    connectPersonaObserver();
+    const initCheckInterval = setInterval(() => {
+        const $avatarBlock = $('#user_avatar_block');
+        
+        if ($avatarBlock.length > 0) {
+            clearInterval(initCheckInterval);
+            injectPersonaUI();
+            connectPersonaObserver();
+        } 
+        
+        retryCount++;
+        if (retryCount > maxRetries) {
+            clearInterval(initCheckInterval);
+            console.log("[FolderHider] Persona block not found, initialization stopped.");
+        }
+    }, 500);
 }
+
 function injectPersonaUI() {
     const $personaBlock = $('#PersonaManagement');
     const $leftCol = $personaBlock.find('.persona_management_left_column');
@@ -1307,6 +1316,7 @@ function openFolderEditPrompt() {
 
 function connectPersonaObserver() {
     const target = document.getElementById('user_avatar_block');
+
     if (!target) return; 
 
     if (personaListObserver) personaListObserver.disconnect();
@@ -1399,7 +1409,8 @@ function openPersonaBulkManager() {
                             ${folderOptions}
                             <option value="__remove__">[폴더에서 제거/미분류]</option>
                         </select>
-                        <button id="pm_execute_move" style="background: #a29bfe; color:#fff;">이동 적용</button>
+                        <!-- 수정됨: 인라인 스타일 제거 및 lavender-btn 클래스 추가 -->
+                        <button id="pm_execute_move" class="lavender-btn" style="width: auto; padding: 0 15px;">이동 적용</button>
                     </div>
                 </div>
             </div>
@@ -1409,7 +1420,7 @@ function openPersonaBulkManager() {
             </div>
             
             <div class="toc-footer">
-                <small style="margin-right:auto; color:#666;">* 변경 사항은 즉시 저장되며, 폴더를 이동합니다.</small>
+                <small style="margin-right:auto; color:var(--fh-text); opacity:0.7;">* 변경 사항은 즉시 저장되며, 폴더를 이동합니다.</small>
                 <button class="lavender-btn close-popup-btn" style="width: auto; padding: 0 20px;">닫기</button>
             </div>
         </div>
@@ -1526,7 +1537,8 @@ function openPersonaBulkManager() {
                     ${imgHtml}
                     <div style="display:flex; flex-direction:column; flex:1; overflow:hidden;">
                         <div class="pm-name-block">
-                            <span class="toc-item-name" style="font-weight:700; font-size:1.05em; color:var(--smart-theme-text-color, #2d3748);">${p.name}</span>
+                            <!-- 수정됨: 하드코딩된 색상 제거 후 테마 변수(--fh-text) 적용 -->
+                            <span class="toc-item-name" style="font-weight:700; font-size:1.05em; color:var(--fh-text);">${p.name}</span>
                             ${addInfoHtml}
                             <div style="margin-left:auto; display:flex; gap:4px;">${folderBadges}</div>
                         </div>
@@ -1676,8 +1688,11 @@ function renderHiddenFolderList() {
 (async function() {
     try {
         const settingsHtml = await $.get(`${extensionFolderPath}/settings.html`);
-		$("#extensions_settings2").append(settingsHtml);
+        $("#extensions_settings2").append(settingsHtml);
         
+        $('#theme_selector_container').html(themeManager.getPaletteHTML(settings.theme));
+        themeManager.bindPaletteEvents();
+
         $('.fh-tab-btn').click(function() {
             const targetId = $(this).data('tab');
             
@@ -1705,11 +1720,12 @@ function renderHiddenFolderList() {
     injectCssRules(); 
     injectJumpButton(); 
     connectObserver(); 
+    themeManager.init(settings.theme);
 	
     // 다음 업데이트 때: CURRENT_NOTICE_ID를 v2로 바꾸고, CURRENT_NOTICE_HTML에 새 내용을 적기만 하면 됩니다.
     const CURRENT_NOTICE_ID = 'patch_2026_01_fix_v1'; 
 
-    // 2. 이번 공지사항의 내용 (HTML 태그 사용 가능)
+    // 이번 공지사항의 내용 (HTML 태그 사용 가능)
     const CURRENT_NOTICE_HTML = `
         <p>
             최근 <b>폴더 간 목차 꼬임 현상</b> 및 <b>백업 오류</b>가 수정되었습니다.<br>
@@ -1718,7 +1734,6 @@ function renderHiddenFolderList() {
         </p>
     `;
 
-    // 3. 로직 실행
     if (settings.last_notice_id !== CURRENT_NOTICE_ID) {
         $('#update_notice_text_area').html(CURRENT_NOTICE_HTML);
         $('#update_notice_box').slideDown();

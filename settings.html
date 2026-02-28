@@ -1,13 +1,13 @@
-<div class="extension-block folderhider-settings lavender-theme">
+<div class="extension-block folderhider-settings">
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-            <b style="color: #9a86d3;">캐릭터 폴더 숨기기 & 목차 설정</b>
+            <b style="color: 
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
 
         <div class="inline-drawer-content">
             
-            <!-- 탭 네비게이션 -->
+            
             <div class="fh-tab-nav">
                 <button class="fh-tab-btn active" data-tab="tab_folder_hide">📂 폴더 숨기기</button>
                 <button class="fh-tab-btn" data-tab="tab_toc_order">🔢 목차/순서 설정</button>
@@ -15,7 +15,7 @@
             </div>
 
             <hr class="sysHR" style="margin-top:0;">
-			<!-- 업데이트 알림 박스 (JS로 제어) -->
+			
 			<div id="update_notice_box" class="notice-box" style="display:none;">
 				<div class="notice-header">
 					<i class="fa-solid fa-circle-exclamation"></i> 
@@ -29,7 +29,7 @@
 				</button>
 			</div>
 
-            <!-- 탭 1: 폴더 숨기기 -->
+            
             <div id="tab_folder_hide" class="fh-tab-content active">
                 <div class="control-group">
                     <label class="flex-container-checkbox-inline">
@@ -37,6 +37,11 @@
                         <span>기능 활성화 (숨기기 및 목차 적용)</span>
                     </label>
                 </div>
+				
+                <div class="control-group" id="theme_selector_container">
+                    
+                </div>
+                <hr class="sysHR">
 
                 <div class="menu-section">
                     <h3>숨길 폴더 추가</h3>
@@ -62,26 +67,27 @@
                 </div>
             </div>
 
-            <!-- 탭 2: 목차 관리 -->
+            
             <div id="tab_toc_order" class="fh-tab-content">
                 <div class="menu-section">
                     <h3>현재 목록 목차(ToC) 관리</h3>
                     <div class="control-group">
                         <label>현재 보고 있는 목록의 순서를 변경하고 구분선을 추가합니다.</label>
-                        <p style="font-size:0.85em; color:#666; margin-bottom:10px;">
+                        <p style="font-size:0.85em; opacity: 0.8; margin-bottom:10px;">
                             팝업창에서 <b>태그 기반 일괄 선택</b> 및 <b>구분선으로 이동</b> 기능을 사용할 수 있습니다.
                         </p>
-                        <button id="open_toc_manager_btn" class="lavender-btn" style="background: linear-gradient(145deg, #d9cff5, #b7a4e0); color: #3a2e5f;">
+                        
+                        <button id="open_toc_manager_btn" class="lavender-btn">
                             <i class="fa-solid fa-list-ol"></i> 현재 화면 순서/목차 편집 팝업 열기
                         </button>
-                        <small style="color: #888; margin-top:5px; display:block;">
+                        <small style="opacity: 0.7; margin-top:5px; display:block;">
                             * 주의: 버튼을 누르면 현재 열려있는 목록(메인 또는 폴더)을 기준으로 설정창이 뜹니다.
                         </small>
                     </div>
                 </div>
             </div>
 
-            <!-- 탭 3: 백업 및 복원 -->
+            
             <div id="tab_backup" class="fh-tab-content">
                 <div class="menu-section">
                     <h3>설정 백업 및 복원</h3>
@@ -90,9 +96,10 @@
                         <textarea id="setting_backup_area" rows="3" placeholder="내보내기 버튼을 누르면 여기에 설정 코드가 나타납니다."></textarea>
                         <div class="button-row" style="display:flex; gap:10px;">
                             <button id="export_settings_btn" class="lavender-btn" style="flex:1;">📤 내보내기</button>
-                            <button id="import_settings_btn" class="lavender-btn" style="flex:1; background: linear-gradient(145deg, #cfd9f5, #a4b7e0);">📥 가져오기</button>
+                            
+                            <button id="import_settings_btn" class="lavender-btn" style="flex:1;">📥 가져오기</button>
                         </div>
-                        <small style="color: #888; margin-top:5px;">
+                        <small style="opacity: 0.7; margin-top:5px;">
                             * 가져오기 시 현재 설정은 덮어씌워집니다. <br>
                             * 불러온 설정에 없는 새로운 캐릭터는 목록의 최하단에 자동으로 추가됩니다 (유동성 대응).
                         </small>
@@ -105,82 +112,110 @@
 </div>
 
 <style>
-/* =============================
-   🎨 라벤더 테마 및 공통 스타일
-============================= */
-.lavender-theme {
-    --accent-color: #bfaee3;
-    --secondary-color: #d7c9f5;
-    --border-color: #cfc7e3;
-    --bg-color: #f8f6fb;
-    --text-color: #3a2e5f;
+
+
+
+.folderhider-settings {
     font-family: 'Pretendard', 'Noto Sans KR', sans-serif;
     line-height: 1.6;
-    color: var(--text-color);
+    color: var(--fh-text);
 }
 
 .folderhider-settings .inline-drawer-content {
-    background-color: var(--bg-color);
+    background-color: var(--fh-bg) !important;
     border-radius: 14px;
     padding: 24px;
-    box-shadow: 0 4px 12px rgba(186, 172, 224, 0.2);
+    box-shadow: 0 4px 12px rgba(0,0,0, 0.1);
+    color: var(--fh-text);
+    border: 1px solid var(--fh-border);
 }
 
-/* 탭 스타일 */
+
 .fh-tab-nav {
     display: flex;
     gap: 5px;
-    margin-bottom: 15px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid var(--fh-border);
 }
 .fh-tab-btn {
     flex: 1;
-    padding: 8px 0;
+    padding: 10px 0;
     border: none;
     background: transparent;
     border-bottom: 3px solid transparent;
     font-weight: 600;
-    color: #888;
+    font-size: 0.95rem;
+    color: var(--fh-text);
+    opacity: 0.6;
     cursor: pointer;
     transition: all 0.2s;
+    margin-bottom: -2px; 
 }
 .fh-tab-btn:hover {
-    color: var(--text-color);
-    background-color: rgba(0,0,0,0.02);
+    opacity: 1;
+    background-color: var(--fh-hover-bg);
 }
 .fh-tab-btn.active {
-    color: #9a86d3;
-    border-bottom: 3px solid #9a86d3;
+    opacity: 1;
+    color: var(--fh-accent);
+    border-bottom: 3px solid var(--fh-accent);
+    background-color: var(--fh-hover-bg);
 }
+
+
 .fh-tab-content {
-    display: none;
-    animation: fadeIn 0.3s ease;
+    display: none; 
+    animation: fadeInTab 0.3s ease;
 }
 .fh-tab-content.active {
-    display: block;
+    display: block; 
 }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+@keyframes fadeInTab {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+
+.fh-palette-row {
+    display: flex;
+    gap: 15px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+.fh-palette-item {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    border: 2px solid var(--fh-border); 
+    transition: transform 0.2s, border-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+}
+.fh-palette-item:hover { transform: scale(1.1); }
+.fh-palette-item.active {
+    border-color: var(--fh-accent);
+    transform: scale(1.15);
+    box-shadow: 0 0 0 2px var(--fh-bg), 0 0 0 4px var(--fh-accent);
+}
 
 
 .folderhider-settings .menu-section { margin-bottom: 30px; }
 .folderhider-settings .menu-section h3 {
-    font-size: 1rem;
-    font-weight: 600;
-    color: #9a86d3;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--fh-accent);
     margin-bottom: 16px;
     position: relative;
-    padding-right: 10px;
+    padding-left: 12px;
+    border-left: 4px solid var(--fh-secondary);
 }
-.folderhider-settings .menu-section h3::after {
-    content: "";
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 5px;
-    height: 18px;
-    background-color: var(--secondary-color);
-    border-radius: 3px;
-}
+.folderhider-settings .menu-section h3::after { display: none; } 
 
 .folderhider-settings .control-group {
     display: flex;
@@ -189,148 +224,178 @@
     margin-bottom: 18px;
 }
 
+
 .folderhider-settings input[type="text"],
 .folderhider-settings textarea {
     width: 100%;
-    padding: 10px 12px;
-    font-size: 0.9rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: #fff;
-    color: var(--text-color);
+    padding: 12px;
+    font-size: 0.95rem;
+    border-radius: 8px;
+    background-color: var(--fh-bg); 
+    color: var(--fh-text);
+    border: 1px solid var(--fh-border);
     resize: vertical;
+    transition: border-color 0.2s;
 }
 .folderhider-settings input[type="text"]:focus,
 .folderhider-settings textarea:focus {
-    border-color: #9a86d3;
-    box-shadow: 0 0 0 2px rgba(154, 134, 211, 0.15);
+    border-color: var(--fh-accent);
+    box-shadow: 0 0 0 3px var(--fh-hover-bg);
+    outline: none;
 }
 
 .folderhider-settings .flex-container-checkbox-inline {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 0.9rem;
+    gap: 10px;
+    font-size: 1rem;
     cursor: pointer;
+    color: var(--fh-text);
+    font-weight: 500;
 }
+.folderhider-settings .flex-container-checkbox-inline input {
+    width: 18px; height: 18px; accent-color: var(--fh-accent);
+}
+
 
 .lavender-btn {
     display: inline-block;
     width: 100%;
-    padding: 10px 0;
-    border: none;
+    padding: 12px 0;
+    border: 1px solid var(--fh-border);
     border-radius: 8px;
-    background: linear-gradient(145deg, #d9cff5, #b7a4e0);
-    color: #3a2e5f;
-    font-weight: 600;
-    font-size: 0.9rem;
+    
+    background: linear-gradient(135deg, var(--fh-btn-grad-1), var(--fh-btn-grad-2));
+    color: var(--fh-btn-text);
+    font-weight: 700;
+    font-size: 0.95rem;
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(170, 150, 220, 0.3);
-    transition: all 0.25s ease;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    transition: all 0.2s ease;
+    text-align: center;
 }
 .lavender-btn:hover {
-    background: linear-gradient(145deg, #cfc1f0, #aa96dc);
-    transform: translateY(-1px);
+    filter: brightness(1.08); 
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
+.lavender-btn:active {
+    transform: translateY(0);
+}
+
 
 .folderhider-settings .scrollable-list {
     max-height: 200px;
-    overflow-y: scroll;
-    padding: 8px;
-    border: 1px solid var(--border-color);
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid var(--fh-border);
     border-radius: 10px;
-    background: #ffffff;
+    background: var(--fh-bg);
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
 }
-.folderhider-settings .scrollable-list::-webkit-scrollbar { width: 0px; background: transparent; }
+.folderhider-settings .scrollable-list::-webkit-scrollbar { width: 6px; }
+.folderhider-settings .scrollable-list::-webkit-scrollbar-thumb { 
+    background: var(--fh-secondary); 
+    border-radius: 3px; 
+}
 
 .folderhider-settings .folder-list-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 10px;
-    background: #f9f7fd;
+    padding: 8px 12px;
+    background: var(--fh-hover-bg);
+    color: var(--fh-text);
     border-radius: 6px;
-    border: 1px solid var(--border-color);
-    font-size: 0.9rem;
+    border: 1px solid var(--fh-border);
+    font-size: 0.95rem;
 }
 .folderhider-settings .folder-name {
-    font-weight: 500;
+    font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     flex-grow: 1;
+    color: var(--fh-text);
 }
 
 .folderhider-settings .delete-btn {
     display: flex;
     align-items: center;
-    gap: 5px;
-    margin-left: 8px;
-    padding: 5px 10px;
-    border: none;
-    border-radius: 8px;
-    font-size: 0.8rem;
+    gap: 6px;
+    margin-left: 10px;
+    padding: 6px 12px;
+    border: 1px solid var(--fh-border);
+    border-radius: 6px;
+    font-size: 0.85rem;
     font-weight: 600;
-    color: #3a2e5f;
-    background: linear-gradient(145deg, #e5dbfa, #c7b5ef);
+    color: var(--fh-btn-text);
+    background: var(--fh-secondary); 
     cursor: pointer;
+    transition: background 0.2s;
 }
 .folderhider-settings .delete-btn:hover {
-    background: linear-gradient(145deg, #d9cbf5, #b8a2e5);
+    filter: brightness(0.9);
 }
 
 .folderhider-settings .sysHR {
     border: none;
-    border-top: 1px dashed var(--border-color);
+    border-top: 1px dashed var(--fh-border);
     margin: 25px 0;
+    opacity: 0.7;
 }
-.placeholder { text-align: center; color: #aaa; padding: 12px 0; }
+.placeholder { 
+    text-align: center; 
+    color: var(--fh-text); 
+    opacity: 0.6; 
+    padding: 20px 0; 
+    font-style: italic;
+}
+
 
 .folderhider-settings .fa, .folderhider-settings .fa-solid {
-    color: #ffffff !important; filter: none !important;
+    color: inherit; 
 }
 
-/* 알림 박스 스타일 */
+
 .notice-box {
-    background-color: #fff4e5;
-    border: 1px solid #ffcc80;
-    color: #663c00;
-    padding: 12px;
+    background-color: 
+    border: 1px solid 
+    color: 
+    padding: 15px;
     border-radius: 8px;
     margin-bottom: 20px;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     animation: fadeIn 0.5s;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 .notice-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 6px;
-    color: #ef6c00;
-}
-.notice-header i {
-    color: #ef6c00 !important; /* 아이콘 색상 강제 적용 */
+    margin-bottom: 8px;
+    color: 
+    font-weight: bold;
 }
 .notice-content p {
-    margin: 0 0 10px 0;
-    line-height: 1.4;
+    margin: 0 0 12px 0;
+    line-height: 1.5;
 }
 .notice-close-btn {
-    background: #fff;
-    border: 1px solid #ffb74d;
-    color: #ef6c00;
-    padding: 6px 12px;
-    border-radius: 4px;
+    background: 
+    border: 1px solid 
+    color: 
+    padding: 8px 16px;
+    border-radius: 6px;
     cursor: pointer;
     font-weight: bold;
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     width: 100%;
     transition: background 0.2s;
 }
-.notice-close-btn:hover {
-    background: #fff3e0;
-}
+.notice-close-btn:hover { background: 
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 </style>
