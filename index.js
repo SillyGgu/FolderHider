@@ -132,7 +132,8 @@ function injectCssRules() {
             box-shadow: 0 1px 3px rgba(0,0,0,0.2); border-color: var(--fh-accent);
         }
         .persona-folder-settings-btn {
-            margin-left: auto; cursor: pointer; padding: 5px; opacity: 0.6; color: var(--fh-text);
+            margin-left: auto; cursor: pointer; padding: 5px; 
+            color: var(--SmartThemeBodyColor);
             flex-shrink: 0; 
         }
         .persona-folder-settings-btn:hover { opacity: 1; color: var(--fh-accent); }
@@ -273,7 +274,7 @@ function injectCssRules() {
         .toc-controls { display: flex; gap: 4px; margin-left: 10px; align-items: center; }
 
         #persona_bulk_manage_btn {
-            cursor: pointer; margin-right: 5px; color: var(--fh-text); transition: color 0.2s;
+            cursor: pointer; margin-right: 5px; color: var(--SmartThemeBodyColor); transition: color 0.2s;
         }
         #persona_bulk_manage_btn:hover { color: var(--fh-accent); }
         
