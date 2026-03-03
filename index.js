@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS = {
     enabled: true,
     hiddenFolders: [], 
     toc: {},
+    collapsed_sections: {},
     persona_folders: {},
     last_persona_folder: 'All',
     theme: 'lavender' 
@@ -273,6 +274,20 @@ function injectCssRules() {
         .toc-item-name { flex: 1; margin-left: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
         .toc-controls { display: flex; gap: 4px; margin-left: 10px; align-items: center; }
 
+        .toc-char-avatar {
+            width: 36px; height: 36px; border-radius: 6px; object-fit: cover;
+            margin: 0 8px 0 4px; border: 1px solid var(--fh-border);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1); background: var(--fh-hover-bg);
+            flex-shrink: 0;
+        }
+        .toc-avatar-placeholder {
+            width: 36px; height: 36px; border-radius: 6px;
+            margin: 0 8px 0 4px; border: 1px solid var(--fh-border);
+            background: var(--fh-hover-bg); flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.75rem; color: var(--fh-text); opacity: 0.4;
+        }
+
         #persona_bulk_manage_btn {
             cursor: pointer; margin-right: 5px; color: var(--SmartThemeBodyColor); transition: color 0.2s;
         }
@@ -319,6 +334,27 @@ function injectCssRules() {
         }
         .fh-jump-item:hover { background: var(--fh-hover-bg); font-weight: bold; color: var(--fh-accent); }
         .fh-jump-item i { margin-right: 6px; font-size: 0.8em; opacity: 0.7; }
+
+        .char-list-separator {
+            cursor: pointer !important;
+            pointer-events: auto !important;
+        }
+        .char-list-separator:hover span {
+            background: var(--fh-hover-bg) !important;
+        }
+        .char-list-separator .fh-collapse-icon {
+            margin-left: 8px;
+            font-size: 0.75em;
+            opacity: 0.6;
+            transition: transform 0.2s;
+            display: inline-block;
+        }
+        .char-list-separator.fh-collapsed .fh-collapse-icon {
+            transform: rotate(-90deg);
+        }
+        .char-list-separator.fh-collapsed span {
+            opacity: 0.6;
+        }
     `;
     
     const $style = $(`<style id="${STYLE_ID}">`).text(staticCss);
@@ -502,7 +538,16 @@ function updateJumpMenu() {
         const $item = $(`<div class="fh-jump-item"><i class="fa-solid fa-chevron-right"></i> ${text}</div>`);
         
         $item.click(function() {
-            $sep[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const currentScroll = $container.scrollTop();
+            const sepTop = $sep.offset().top;
+            const containerTop = $container.offset().top;
+            
+            const targetTop = currentScroll + sepTop - containerTop;
+
+            $container[0].scrollTo({
+                top: targetTop,
+                behavior: 'smooth'
+            });
             
             $menu.fadeOut(100);
             $('#fh_jump_btn').removeClass('active');
@@ -519,6 +564,38 @@ function updateJumpMenu() {
          $('#fh_jump_btn').removeClass('active');
     });
     $menu.append($topItem);
+}
+
+// =========================================================================
+// ToC Button in Character List Panel
+// =========================================================================
+function addTocButton() {
+    if ($('#fh_toc_char_btn').length > 0) {
+        return;
+    }
+
+    const tocButton = $('<div>', {
+        id: 'fh_toc_char_btn',
+        class: 'menu_button fa-solid fa-list-ol interactable',
+        title: '목차/순서 편집',
+        tabindex: '0',
+        role: 'button',
+        'data-i18n': '[title]목차/순서 편집'
+    });
+
+    tocButton.on('click', function(event) {
+        event.stopPropagation();
+        renderTocManagerPopup();
+    });
+
+    const $botBtn = $('#rm_button_bot');
+    if ($botBtn.length > 0) {
+        $botBtn.after(tocButton);
+    } else {
+        $('#rm_button_group_chats').after(tocButton);
+    }
+
+    console.log('[FolderHider] ToC button added to character list panel');
 }
 
 function applyTocOrderToDom($container) {
@@ -605,11 +682,37 @@ function applyTocOrderToDom($container) {
     // (B) 저장된 목차(ToC) 순서대로 배치
     tocConfig.items.forEach(confItem => {
         if (confItem.type === 'header') {
+            const contextId = getCurrentContextId();
+            const collapseKey = `${contextId}__${confItem.text}`;
+            const isCollapsed = settings.collapsed_sections && settings.collapsed_sections[collapseKey];
             const $sep = $(`
-                <div class="char-list-separator">
-                    <span>${confItem.text}</span>
+                <div class="char-list-separator${isCollapsed ? ' fh-collapsed' : ''}" data-collapse-key="${collapseKey}">
+                    <span>${confItem.text}<i class="fa-solid fa-chevron-down fh-collapse-icon"></i></span>
                 </div>
             `);
+            $sep.on('click', function() {
+                const key = $(this).data('collapse-key');
+                const nowCollapsed = $(this).hasClass('fh-collapsed');
+                if (nowCollapsed) {
+                    $(this).removeClass('fh-collapsed');
+                    if (settings.collapsed_sections) delete settings.collapsed_sections[key];
+                    let $next = $(this).next();
+                    while ($next.length && !$next.hasClass('char-list-separator')) {
+                        $next.removeClass(HIDDEN_CLASS);
+                        $next = $next.next();
+                    }
+                } else {
+                    $(this).addClass('fh-collapsed');
+                    if (!settings.collapsed_sections) settings.collapsed_sections = {};
+                    settings.collapsed_sections[key] = true;
+                    let $next = $(this).next();
+                    while ($next.length && !$next.hasClass('char-list-separator')) {
+                        $next.addClass(HIDDEN_CLASS);
+                        $next = $next.next();
+                    }
+                }
+                saveSettingsDebounced();
+            });
             $container.append($sep);
         } else {
             if (confItem.type === 'folder' && excludeFolders) return; 
@@ -642,6 +745,16 @@ function applyTocOrderToDom($container) {
     const $hiddenBlock = $container.find('.hidden_block');
     $hiddenBlock.detach();
     $container.append($hiddenBlock);
+
+    if (settings.collapsed_sections) {
+        $container.find('.char-list-separator.fh-collapsed').each(function() {
+            let $next = $(this).next();
+            while ($next.length && !$next.hasClass('char-list-separator')) {
+                $next.addClass(HIDDEN_CLASS);
+                $next = $next.next();
+            }
+        });
+    }
 
     connectObserver();
     
@@ -746,12 +859,12 @@ const popupHtml = `
                     <i class="fa-solid fa-xmark close-toc-btn" style="cursor:pointer; font-size:1.2rem; opacity:0.6; transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6"></i>
                 </div>
                 
-                <div class="toc-toolbar" style="padding: 16px 24px; border-bottom: 1px solid var(--fh-border); display:flex; flex-direction:column; gap:10px;">
+<div class="toc-toolbar" style="padding: 16px 24px; border-bottom: 1px solid var(--fh-border); display:flex; flex-direction:column; gap:10px;">
                     <div class="toc-toolbar-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                         <button id="toc_select_all_btn" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">전체 선택</button>
                         <button id="toc_deselect_all_btn" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">선택 해제</button>
-                        <div style="width:1px; height:20px; background:var(--fh-border); margin:0 4px;"></div>
-                        <input type="text" id="toc_tag_filter_input" list="toc_tag_datalist" placeholder="태그 선택 또는 검색..." style="width:160px; padding: 7px 12px; border-radius:8px; font-size:0.9rem;">
+                        <div style="width:1px; height:20px; background:var(--fh-border); margin:0 2px;"></div>
+                        <input type="text" id="toc_tag_filter_input" list="toc_tag_datalist" placeholder="태그 선택 또는 검색..." style="width:150px; padding: 7px 12px; border-radius:8px; font-size:0.9rem;">
                         <datalist id="toc_tag_datalist">${tagOptionsHtml}</datalist>
                         <button id="toc_select_by_tag_btn" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">태그로 선택</button>
                     </div>
@@ -765,11 +878,21 @@ const popupHtml = `
                 </div>
 
                 <div class="toc-body" id="toc_items_list" style="padding: 16px 24px; overflow-y:auto;">
-                    <div class="toc-checkbox-row" style="margin-bottom:12px; padding: 10px 14px; border-radius:8px; background:var(--fh-hover-bg); border:1px solid var(--fh-border);">
-                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.9rem; font-weight:600;">
-                            <input type="checkbox" id="toc_exclude_folders" ${savedConfig.excludeFolders ? 'checked' : ''}>
-                            폴더 제외하기 (폴더는 항상 맨 위에 고정, 정렬 제외)
-                        </label>
+                    <div class="toc-checkbox-row" style="margin-bottom:12px; padding: 10px 14px; border-radius:8px; background:var(--fh-hover-bg); border:1px solid var(--fh-border); display:flex; flex-direction:column; gap:8px;">
+                        <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
+                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.9rem; font-weight:600;">
+                                <input type="checkbox" id="toc_exclude_folders" ${savedConfig.excludeFolders ? 'checked' : ''}>
+                                폴더 제외하기 (폴더는 항상 맨 위에 고정, 정렬 제외)
+                            </label>
+                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.9rem; font-weight:600;">
+                                <input type="checkbox" id="toc_toggle_images">
+                                🖼️ 이미지 표시
+                            </label>
+                        </div>
+                        <div style="position:relative; width:100%;">
+                            <input type="text" id="toc_search_input" placeholder="🔍 이름 검색..." style="width:100%; padding: 6px 32px 6px 12px; border-radius:7px; font-size:0.88rem; border:1px solid var(--fh-border); background:var(--fh-bg); color:var(--fh-text); box-sizing:border-box;">
+                            <i class="fa-solid fa-xmark" id="toc_search_clear" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer; opacity:0.4; font-size:0.85rem; display:none; color:var(--fh-text);"></i>
+                        </div>
                     </div>
                 </div>
                 <div class="toc-footer" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; padding: 14px 24px; border-top: 1px solid var(--fh-border);">
@@ -824,9 +947,12 @@ const popupHtml = `
 
         const excludeFolders = $('#toc_exclude_folders').is(':checked');
         const hiddenFolders = settings.hiddenFolders || [];
+        const showImages = $('#toc_toggle_images').is(':checked');
+        const searchQuery = ($('#toc_search_input').val() || '').toLowerCase().trim();
 
         workingList.forEach((item, index) => {
             if (excludeFolders && item.type === 'folder') return;
+            if (searchQuery && item.type !== 'header' && !item.name.toLowerCase().includes(searchQuery)) return;
 
             if (item.type === 'header') {
                 $targetSelect.append(`<option value="${index}">[구분선] ${item.text}</option>`);
@@ -864,18 +990,36 @@ const popupHtml = `
                 }
             }
 
+            let avatarHtml = '';
+            if (!isHeader && showImages) {
+                const chid = $(`#rm_print_characters_block .character_select`).filter(function() {
+                    const chObj = characters[$(this).attr('data-chid')];
+                    return chObj && chObj.avatar === item.id;
+                }).attr('data-chid');
+                const imgSrc = (chid !== undefined && characters[chid] && characters[chid].avatar)
+                    ? `/characters/${characters[chid].avatar}`
+                    : null;
+                avatarHtml = imgSrc
+                    ? `<img src="${imgSrc}" class="toc-char-avatar" alt="${item.name}" onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='flex');">`
+                    : `<div class="toc-avatar-placeholder"><i class="fa-solid fa-user"></i></div>`;
+            }
+
             const html = `
                 <div class="toc-item ${isHeader ? 'type-header' : 'type-' + item.type} ${hiddenClass} ${selectedClass}" 
                      data-index="${index}" 
                      draggable="true">
                     <input type="checkbox" class="toc-item-checkbox" ${isChecked}>
-                    <i class="fa-solid ${iconClass}"></i>
+                    ${avatarHtml}
+                    ${!showImages || isHeader ? `<i class="fa-solid ${iconClass}"></i>` : ''}
                     <span class="toc-item-name" ${isHeader ? 'contenteditable="true"' : ''}>${name}</span>
                     <div class="toc-controls">
                         ${infoBtnHtml}
                         <div class="toc-btn up"><i class="fa-solid fa-arrow-up"></i></div>
                         <div class="toc-btn down"><i class="fa-solid fa-arrow-down"></i></div>
-                        ${isHeader ? '<div class="toc-btn del"><i class="fa-solid fa-trash"></i></div>' : ''}
+                        ${isHeader ? `
+                            <div class="toc-btn sort-section" title="이 섹션 이름순 정렬"><i class="fa-solid fa-arrow-down-a-z"></i></div>
+                            <div class="toc-btn del"><i class="fa-solid fa-trash"></i></div>
+                        ` : ''}
                     </div>
                 </div>
             `;
@@ -915,6 +1059,24 @@ const popupHtml = `
         $list.find('.toc-btn.del').click(function(e) {
             e.stopPropagation();
             if (confirm('이 구분선을 삭제하시겠습니까?')) { workingList.splice($(this).closest('.toc-item').data('index'), 1); renderList(); }
+        });
+
+        $list.find('.toc-btn.sort-section').click(function(e) {
+            e.stopPropagation();
+            const headerIdx = $(this).closest('.toc-item').data('index');
+            let sectionStart = headerIdx + 1;
+            let sectionEnd = workingList.length;
+            for (let i = sectionStart; i < workingList.length; i++) {
+                if (workingList[i].type === 'header') {
+                    sectionEnd = i;
+                    break;
+                }
+            }
+            if (sectionEnd <= sectionStart) return;
+            const sectionItems = workingList.slice(sectionStart, sectionEnd);
+            sectionItems.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+            workingList.splice(sectionStart, sectionEnd - sectionStart, ...sectionItems);
+            renderList();
         });
         
         $list.find('.toc-item-name[contenteditable]').on('blur', function() {
@@ -1052,6 +1214,17 @@ const popupHtml = `
     });
 
     $('#toc_exclude_folders').change(renderList);
+    $('#toc_toggle_images').change(renderList);
+    $('#toc_search_input').on('input', function() {
+        const hasVal = $(this).val().length > 0;
+        $('#toc_search_clear').toggle(hasVal);
+        renderList();
+    });
+    $('#toc_search_clear').click(function() {
+        $('#toc_search_input').val('');
+        $(this).hide();
+        renderList();
+    });
     $('.add-sep-btn').click(() => {
         const t = prompt('구분선 이름:', '새 분류');
         if (t) { workingList.push({type:'header', text:t, id: `header_${Date.now()}`}); renderList(); }
@@ -1287,8 +1460,45 @@ function renderPersonaTabs() {
     });
 
     $bar.find('.persona-folder-settings-btn').click(openFolderEditPrompt);
-}
 
+    const barEl = $bar[0];
+    if (!barEl._fhDragScrollBound) {
+        barEl._fhDragScrollBound = true;
+        let isDragging = false;
+        let startX = 0;
+        let startScrollLeft = 0;
+        let didDrag = false;
+
+        $bar.on('mousedown.fhscroll', function(e) {
+            if ($(e.target).hasClass('persona-folder-tab') || $(e.target).closest('.persona-folder-tab').length) {
+                isDragging = true;
+                didDrag = false;
+                startX = e.pageX;
+                startScrollLeft = barEl.scrollLeft;
+                $bar.css('cursor', 'grabbing');
+                e.preventDefault();
+            }
+        });
+
+        $(document).on('mousemove.fhscroll', function(e) {
+            if (!isDragging) return;
+            const dx = e.pageX - startX;
+            if (Math.abs(dx) > 3) didDrag = true;
+            barEl.scrollLeft = startScrollLeft - dx;
+        });
+
+        $(document).on('mouseup.fhscroll', function() {
+            if (!isDragging) return;
+            isDragging = false;
+            $bar.css('cursor', '');
+            if (didDrag) {
+                $bar.one('click.fhscrollblock', function(e) {
+                    e.stopImmediatePropagation();
+                });
+            }
+        });
+    }
+}
 function openFolderEditPrompt() {
     const action = prompt("동작을 선택하세요:\n1. 폴더 추가\n2. 폴더 이름 변경\n3. 폴더 삭제", "1");
     if (!action) return;
@@ -1447,6 +1657,9 @@ const popupHtml = `
     `;
 
     $overlay.html(popupHtml);
+    $overlay.on('mousedown click pointerdown', function(e) {
+        e.stopPropagation();
+    });
     $('body').append($overlay);
 
     const $modal = $overlay.find('#pm_modal_inner');
@@ -1738,7 +1951,8 @@ function renderHiddenFolderList() {
 
     injectCssRules(); 
     injectJumpButton(); 
-    connectObserver(); 
+    addTocButton();
+    connectObserver();
     themeManager.init(settings.theme);
 	
     // 다음 업데이트 때: CURRENT_NOTICE_ID를 v2로 바꾸고, CURRENT_NOTICE_HTML에 새 내용을 적기만 하면 됩니다.
