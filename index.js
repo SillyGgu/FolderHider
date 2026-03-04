@@ -942,6 +942,12 @@ const popupHtml = `
 
     function renderList() {
         const scrollTop = $list.scrollTop();
+		const avatarToChid = new Map();
+		$('#rm_print_characters_block .character_select').each(function() {
+			const chid = $(this).attr('data-chid');
+			const chObj = characters[chid];
+			if (chObj && chObj.avatar) avatarToChid.set(chObj.avatar, chid);
+		});
         $list.find('.toc-item').remove();
         $targetSelect.find('option:not(:first)').remove(); 
 
@@ -992,13 +998,10 @@ const popupHtml = `
 
             let avatarHtml = '';
             if (!isHeader && showImages) {
-                const chid = $(`#rm_print_characters_block .character_select`).filter(function() {
-                    const chObj = characters[$(this).attr('data-chid')];
-                    return chObj && chObj.avatar === item.id;
-                }).attr('data-chid');
-                const imgSrc = (chid !== undefined && characters[chid] && characters[chid].avatar)
-                    ? `/characters/${characters[chid].avatar}`
-                    : null;
+				const chid = avatarToChid.get(item.id);
+				const imgSrc = (chid !== undefined && characters[chid] && characters[chid].avatar)
+					? `/characters/${characters[chid].avatar}`
+					: null;
                 avatarHtml = imgSrc
                     ? `<img src="${imgSrc}" class="toc-char-avatar" alt="${item.name}" onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='flex');">`
                     : `<div class="toc-avatar-placeholder"><i class="fa-solid fa-user"></i></div>`;
@@ -1088,6 +1091,7 @@ const popupHtml = `
             $(this).closest('.toc-item').attr('draggable', 'false');
             e.stopPropagation(); 
         });
+		let $allItems = $list.find('.toc-item');
 
         // [드래그 앤 드롭]
         let draggedIndex = null;
@@ -1114,19 +1118,24 @@ const popupHtml = `
             draggedIndex = null; 
         });
 
-        $list.find('.toc-item').on('dragover', function(e) {
-            e.preventDefault(); 
-            e.originalEvent.dataTransfer.dropEffect = 'move';
-            
-            $('.toc-item').removeClass('drag-over');
-            const idx = $(this).data('index');
-            
-            const isDraggingSelected = (draggedIndex !== null) && workingList[draggedIndex] && workingList[draggedIndex]._selected;
-            if (isDraggingSelected && workingList[idx]._selected) return;
-            if (draggedIndex === idx && !isDraggingSelected) return;
+		let lastDragOver = 0;
+		$allItems.on('dragover', function(e) {
+			e.preventDefault();
+			e.originalEvent.dataTransfer.dropEffect = 'move';
 
-            $(this).addClass('drag-over');
-        });
+			const now = Date.now();
+			if (now - lastDragOver < 30) return;
+			lastDragOver = now;
+
+			$allItems.removeClass('drag-over');
+			const idx = $(this).data('index');
+
+			const isDraggingSelected = (draggedIndex !== null) && workingList[draggedIndex] && workingList[draggedIndex]._selected;
+			if (isDraggingSelected && workingList[idx]._selected) return;
+			if (draggedIndex === idx && !isDraggingSelected) return;
+
+			$(this).addClass('drag-over');
+		});
 
         $list.find('.toc-item').on('drop', function(e) {
             e.preventDefault(); 
