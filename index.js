@@ -434,18 +434,35 @@ function getDomItems($container) {
 // 3. Logic: DOM 재배치 (Fluidity 대응)
 // =========================================================================
 
-let observerTimeout = null;
+let observerRaf = null;
 
 function connectObserver() {
     const target = document.getElementById('rm_print_characters_block');
     if (target && !mainListObserver) {
         mainListObserver = new MutationObserver((mutations) => {
+
+            // FolderHider 자신의 DOM 조작인지 확인 (detach/separator 삽입)
+            const isSelfMutation = mutations.every(mutation =>
+                Array.from(mutation.addedNodes).every(node =>
+                    node.nodeType === 1 && node.classList.contains('char-list-separator')
+                ) &&
+                Array.from(mutation.removedNodes).every(node =>
+                    node.nodeType === 1 && (
+                        node.classList.contains('character_select') ||
+                        node.classList.contains('bogus_folder_select') ||
+                        node.classList.contains('char-list-separator') ||
+                        node.classList.contains('hidden_block')
+                    )
+                )
+            );
+
+            if (isSelfMutation) return;
+
+            // 즉시 숨김 처리 (hidden folder 깜빡임 방지)
             if (settings.enabled && settings.hiddenFolders.length > 0) {
                 const isSubFolderView = document.getElementById('BogusFolderBack');
-                
                 if (!isSubFolderView) {
                     const hiddenTitles = settings.hiddenFolders.map(name => `[Folder] ${name.replace(/"/g, '\\"')}`);
-                    
                     mutations.forEach(mutation => {
                         mutation.addedNodes.forEach(node => {
                             if (node.nodeType === 1 && node.classList.contains('bogus_folder_select')) {
@@ -459,23 +476,48 @@ function connectObserver() {
                 }
             }
 
-            if (observerTimeout) clearTimeout(observerTimeout);
-            observerTimeout = setTimeout(() => {
-                hideFoldersOnListUpdate();
-            }, 100);
+            // ST 렌더 완료 신호 판별
+            const hasHiddenBlock = mutations.some(mutation =>
+                Array.from(mutation.addedNodes).some(node =>
+                    node.nodeType === 1 && node.classList.contains('hidden_block')
+                )
+            );
+
+            // 메인화면 완료 신호: hidden_block 없이 bogus_folder_select 또는 character_select가 추가됨
+            const hasCharOrFolder = mutations.some(mutation =>
+                Array.from(mutation.addedNodes).some(node =>
+                    node.nodeType === 1 && (
+                        node.classList.contains('character_select') ||
+                        node.classList.contains('bogus_folder_select')
+                    )
+                )
+            );
+            const isMainRenderComplete = !hasHiddenBlock && hasCharOrFolder;
+
+            // 폴더안 완료 신호: hidden_block이 포함된 append
+            const isFolderRenderComplete = hasHiddenBlock;
+
+            if (isMainRenderComplete || isFolderRenderComplete) {
+                if (observerRaf) cancelAnimationFrame(observerRaf);
+                observerRaf = requestAnimationFrame(() => {
+                    observerRaf = null;
+                    hideFoldersOnListUpdate();
+                });
+            }
         });
         mainListObserver.observe(target, { childList: true, subtree: false });
     }
 }
+
 
 function disconnectObserver() {
     if (mainListObserver) {
         mainListObserver.disconnect();
         mainListObserver = null;
     }
-    if (observerTimeout) {
-        clearTimeout(observerTimeout);
-        observerTimeout = null;
+    if (observerRaf) {
+        cancelAnimationFrame(observerRaf);
+        observerRaf = null;
     }
 }
 
@@ -645,6 +687,8 @@ function applyTocOrderToDom($container) {
     }
     // -------------------------------------------------------------------------
 
+    $container.css('visibility', 'hidden');
+
     // 1. 일단 DOM 요소들을 모두 떼어냄 (Detach)
     currentItems.forEach(item => item.$el.detach());
 
@@ -756,10 +800,12 @@ function applyTocOrderToDom($container) {
         });
     }
 
+    $container.css('visibility', '');
     connectObserver();
     
     updateJumpMenu();
 }
+
 
 function hideFoldersOnListUpdate() {
     const $characterBlock = $('#rm_print_characters_block');
