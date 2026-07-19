@@ -44,6 +44,7 @@ if (!settings || Object.keys(settings).length === 0) {
 
 let mainListObserver = null;
 let personaListObserver = null;
+let personaFilterRaf = null;
 
 // =========================================================================
 // 1. CSS Injection
@@ -367,21 +368,63 @@ function injectCssRules() {
 // =========================================================================
 
 function getCurrentContextId() {
-    if (!entitiesFilter || !tags) return 'root';
+    return getCurrentContextInfo().id;
+}
+
+function getCurrentContextInfo() {
+    if (!entitiesFilter || !tags) return { id: 'root', legacyId: 'root', name: 'Main List' };
 
     const filterData = entitiesFilter.getFilterData('tag');
-    const selectedTags = filterData ? filterData.selected : [];
+    const selectedTags = filterData ? Array.from(filterData.selected || []) : [];
 
-    const activeFolderTag = [...selectedTags]
-        .reverse()
+    const folderTags = selectedTags
         .map(tagId => tags.find(t => t.id === tagId))
-        .find(tag => tag && tag.folder_type);
+        .filter(tag => tag && tag.folder_type);
+
+    const activeFolderTag = folderTags[folderTags.length - 1];
 
     if (activeFolderTag) {
-        return 'folder_' + activeFolderTag.id;
+        const legacyId = 'folder_' + activeFolderTag.id;
+        const folderPathIds = folderTags.map(tag => tag.id);
+        return {
+            id: folderPathIds.length > 1 ? 'folder_path_' + folderPathIds.join('__') : legacyId,
+            legacyId,
+            name: folderTags.map(tag => tag.name).join(' / '),
+        };
     }
 
-    return 'root';
+    return { id: 'root', legacyId: 'root', name: 'Main List' };
+}
+
+function countTocMatches(currentItems, tocItems) {
+    const realTocItems = (tocItems || []).filter(i => i.type !== 'header');
+    if (currentItems.length === 0 || realTocItems.length === 0) return 0;
+
+    const domKeySet = new Set(currentItems.map(i => `${i.type}_${i.id}`));
+    let matchCount = realTocItems.filter(i => domKeySet.has(`${i.type}_${i.id}`)).length;
+
+    if (matchCount === 0) {
+        const domNameSet = new Set(currentItems.map(i => i.name));
+        matchCount += realTocItems.filter(i => domNameSet.has(i.id)).length;
+    }
+
+    return matchCount;
+}
+
+function getTocConfigForContext(contextInfo, currentItems) {
+    const directConfig = settings.toc[contextInfo.id];
+    if (directConfig) {
+        return { config: directConfig, key: contextInfo.id, isLegacy: false };
+    }
+
+    if (contextInfo.legacyId && contextInfo.legacyId !== contextInfo.id) {
+        const legacyConfig = settings.toc[contextInfo.legacyId];
+        if (legacyConfig && countTocMatches(currentItems, legacyConfig.items) > 0) {
+            return { config: legacyConfig, key: contextInfo.legacyId, isLegacy: true };
+        }
+    }
+
+    return { config: null, key: contextInfo.id, isLegacy: false };
 }
 
 function getDomItems($container) {
@@ -645,7 +688,8 @@ function applyTocOrderToDom($container) {
 
     disconnectObserver();
 
-    const contextId = getCurrentContextId();
+    const contextInfo = getCurrentContextInfo();
+    const contextId = contextInfo.id;
     
     const isVisuallyInFolder = $container.find('#BogusFolderBack').length > 0;
 
@@ -655,7 +699,8 @@ function applyTocOrderToDom($container) {
         return;
     }
 
-    const tocConfig = settings.toc[contextId];
+    const currentItems = getDomItems($container);
+    const tocConfig = getTocConfigForContext(contextInfo, currentItems).config;
 
     if (!tocConfig || !tocConfig.items || tocConfig.items.length === 0) {
         $container.find('.char-list-separator').remove();
@@ -664,26 +709,10 @@ function applyTocOrderToDom($container) {
         return;
     }
 
-    const currentItems = getDomItems($container);
-    const realTocItems = tocConfig.items.filter(i => i.type !== 'header');
-    
-    if (currentItems.length > 0 && realTocItems.length > 0) {
-        const domKeySet = new Set(currentItems.map(i => `${i.type}_${i.id}`));
-        
-        let matchCount = 0;
-        
-        matchCount += realTocItems.filter(i => domKeySet.has(`${i.type}_${i.id}`)).length;
-
-        if (matchCount === 0) {
-            const domNameSet = new Set(currentItems.map(i => i.name));
-            matchCount += realTocItems.filter(i => domNameSet.has(i.id)).length;
-        }
-
-        if (matchCount === 0) {
-            connectObserver();
-            updateJumpMenu();
-            return;
-        }
+    if (tocConfig.items.some(i => i.type !== 'header') && countTocMatches(currentItems, tocConfig.items) === 0) {
+        connectObserver();
+        updateJumpMenu();
+        return;
     }
     // -------------------------------------------------------------------------
 
@@ -707,6 +736,13 @@ function applyTocOrderToDom($container) {
         const key = `${item.type}_${item.id}`;
         itemMap.set(key, item);
     });
+    const fragment = document.createDocumentFragment();
+    const placedItems = new Set();
+    const appendItem = (item) => {
+        if (!item || placedItems.has(item)) return;
+        placedItems.add(item);
+        fragment.appendChild(item.$el[0]);
+    };
 
     const excludeFolders = tocConfig.excludeFolders;
     
@@ -717,7 +753,7 @@ function applyTocOrderToDom($container) {
                 const key = `folder_${item.id}`;
                 const itemObj = itemMap.get(key);
                 if (itemObj) {
-                    $container.append(itemObj.$el);
+                    appendItem(itemObj);
                 }
             }
         });
@@ -726,7 +762,6 @@ function applyTocOrderToDom($container) {
     // (B) 저장된 목차(ToC) 순서대로 배치
     tocConfig.items.forEach(confItem => {
         if (confItem.type === 'header') {
-            const contextId = getCurrentContextId();
             const collapseKey = `${contextId}__${confItem.text}`;
             const isCollapsed = settings.collapsed_sections && settings.collapsed_sections[collapseKey];
             const $sep = $(`
@@ -757,7 +792,7 @@ function applyTocOrderToDom($container) {
                 }
                 saveSettingsDebounced();
             });
-            $container.append($sep);
+            fragment.appendChild($sep[0]);
         } else {
             if (confItem.type === 'folder' && excludeFolders) return; 
 
@@ -768,22 +803,20 @@ function applyTocOrderToDom($container) {
                 item = currentItems.find(i => 
                     i.name === confItem.id &&
                     i.type === confItem.type && 
-                    i.$el.parent().length === 0 
+                    !placedItems.has(i)
                 );
             }
 
-            if (item && item.$el.parent().length === 0) {
-                $container.append(item.$el);
-            }
+            appendItem(item);
         }
     });
 
     // (C) 유동성 대응 
     currentItems.forEach(item => {
-        if (item.$el.parent().length === 0) {
-            $container.append(item.$el);
-        }
+        appendItem(item);
     });
+
+    $container[0].appendChild(fragment);
 
     // (D) 히든 카운터 블록 처리
     const $hiddenBlock = $container.find('.hidden_block');
@@ -836,31 +869,22 @@ function hideFoldersOnListUpdate() {
 // =========================================================================
 
 function renderTocManagerPopup() {
-    const contextId = getCurrentContextId();
-    const contextTagName = contextId.startsWith('folder_') 
-        ? (tags.find(t => 'folder_' + t.id === contextId)?.name || '폴더 내부') 
-        : '메인 목록 (Root)';
+    const contextInfo = getCurrentContextInfo();
+    const contextId = contextInfo.id;
+    const contextTagName = contextId === 'root' ? '메인 목록 (Root)' : contextInfo.name;
 
-    const savedConfig = settings.toc[contextId] || { excludeFolders: true, items: [] };
     const $container = $('#rm_print_characters_block');
     const currentItems = getDomItems($container); 
+    const contextLookup = getTocConfigForContext(contextInfo, currentItems);
+    const savedConfig = contextLookup.config || { excludeFolders: true, items: [] };
 
     let workingConfigItems = savedConfig.items || [];
     let isConfigMismatch = false;
 
-    const realConfigItems = workingConfigItems.filter(i => i.type !== 'header');
-    if (currentItems.length > 0 && realConfigItems.length > 0) {
-        const domKeySet = new Set(currentItems.map(i => `${i.type}_${i.id}`));
-        let matchCount = realConfigItems.filter(i => domKeySet.has(`${i.type}_${i.id}`)).length;
-        if (matchCount === 0) {
-            const domNameSet = new Set(currentItems.map(i => i.name));
-            matchCount += realConfigItems.filter(i => domNameSet.has(i.id)).length;
-        }
-        if (matchCount === 0) {
-            console.warn(`[FolderHider] Context mismatch detected in Popup.`);
-            workingConfigItems = []; 
-            isConfigMismatch = true;
-        }
+    if (workingConfigItems.some(i => i.type !== 'header') && countTocMatches(currentItems, workingConfigItems) === 0) {
+        console.warn(`[FolderHider] Context mismatch detected in Popup.`);
+        workingConfigItems = []; 
+        isConfigMismatch = true;
     }
 
     let workingList = [];
@@ -1001,6 +1025,7 @@ const popupHtml = `
         const hiddenFolders = settings.hiddenFolders || [];
         const showImages = $('#toc_toggle_images').is(':checked');
         const searchQuery = ($('#toc_search_input').val() || '').toLowerCase().trim();
+        const htmlParts = [];
 
         workingList.forEach((item, index) => {
             if (excludeFolders && item.type === 'folder') return;
@@ -1072,8 +1097,10 @@ const popupHtml = `
                     </div>
                 </div>
             `;
-            $list.append(html);
+            htmlParts.push(html);
         });
+
+        if (htmlParts.length) $list.append(htmlParts.join(''));
 
         $list.scrollTop(scrollTop);
         bindItemEvents();
@@ -1259,7 +1286,7 @@ const popupHtml = `
                 closePopup();
                 return;
             }
-            delete settings.toc[contextId];
+            delete settings.toc[contextLookup.key || contextId];
             saveSettingsDebounced();
             closePopup();
             hideFoldersOnListUpdate();
@@ -1307,14 +1334,14 @@ const popupHtml = `
 }
 
 function onExportSettings() {
-    const contextId = getCurrentContextId();
-    let currentToc = settings.toc[contextId];
+    const contextInfo = getCurrentContextInfo();
+    const contextId = contextInfo.id;
+    const $container = $('#rm_print_characters_block');
+    const items = getDomItems($container);
+    let currentToc = getTocConfigForContext(contextInfo, items).config;
     let isAutoGenerated = false;
 
     if (!currentToc) {
-        const $container = $('#rm_print_characters_block');
-        const items = getDomItems($container);
-        
         const capturedItems = items.map(item => ({
             type: item.type,
             id: item.id
@@ -1322,7 +1349,7 @@ function onExportSettings() {
 
         currentToc = {
             excludeFolders: true, 
-            folderName: contextId === 'root' ? 'Main List' : contextId,
+            folderName: contextId === 'root' ? 'Main List' : contextInfo.name,
             items: capturedItems
         };
         isAutoGenerated = true;
@@ -1606,8 +1633,12 @@ function connectPersonaObserver() {
 
     if (personaListObserver) personaListObserver.disconnect();
 
-    personaListObserver = new MutationObserver((mutations) => {
-        applyPersonaFolderFilter();
+    personaListObserver = new MutationObserver(() => {
+        if (personaFilterRaf) cancelAnimationFrame(personaFilterRaf);
+        personaFilterRaf = requestAnimationFrame(() => {
+            personaFilterRaf = null;
+            applyPersonaFolderFilter();
+        });
     });
 
     personaListObserver.observe(target, { childList: true, subtree: false });
@@ -1623,7 +1654,7 @@ function applyPersonaFolderFilter() {
         return;
     }
 
-    const folderItems = settings.persona_folders[currentPersonaFolder] || [];
+    const folderItems = new Set(settings.persona_folders[currentPersonaFolder] || []);
     const allCategorized = new Set();
     Object.values(settings.persona_folders).forEach(list => list.forEach(id => allCategorized.add(id)));
 
@@ -1636,7 +1667,7 @@ function applyPersonaFolderFilter() {
         if (currentPersonaFolder === 'Uncategorized') {
             if (!allCategorized.has(id)) shouldShow = true;
         } else {
-            if (folderItems.includes(id)) shouldShow = true;
+            if (folderItems.has(id)) shouldShow = true;
         }
 
         if (shouldShow) {
@@ -1801,6 +1832,7 @@ const popupHtml = `
         const filterFolder = $('#pm_filter_folder').val();
         const filterLang = $('#pm_filter_lang').val();
         const showImages = $('#pm_toggle_images').is(':checked');
+        const htmlParts = [];
 
         allPersonas.forEach((p, idx) => {
             if (searchQuery && !p.name.toLowerCase().includes(searchQuery) && !p.addInfo.toLowerCase().includes(searchQuery)) return;
@@ -1832,8 +1864,10 @@ const popupHtml = `
                     </div>
                 </div>
             `;
-            $list.append(itemHtml);
+            htmlParts.push(itemHtml);
         });
+
+        if (htmlParts.length) $list.append(htmlParts.join(''));
 
         $list.find('.toc-item').click(function(e) {
             if ($(e.target).is('input')) return;
