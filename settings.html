@@ -89,10 +89,11 @@
                 <div class="menu-section">
                     <h3>설정 백업 및 복원</h3>
                     <div class="control-group">
-                        <label>현재 설정(숨김 폴더 + 목차 순서)을 텍스트로 저장하거나 불러옵니다.</label>
+                        <label>현재 목록 목차 또는 전체 설정을 텍스트로 백업하고 복원합니다.</label>
                         <textarea id="setting_backup_area" rows="3" placeholder="내보내기 버튼을 누르면 여기에 설정 코드가 나타납니다."></textarea>
                         <div class="button-row" style="display:flex; gap:10px;">
-                            <button id="export_settings_btn" class="lavender-btn" style="flex:1;">📤 내보내기</button>
+                            <button id="export_settings_btn" class="lavender-btn" style="flex:1;">📤 현재 목록 목차</button>
+                            <button id="export_all_settings_btn" class="lavender-btn" style="flex:1;">📤 전체 설정</button>
                             <button id="import_settings_btn" class="lavender-btn" style="flex:1;">📥 가져오기</button>
                         </div>
                         <small style="opacity: 0.7; margin-top:5px;">
@@ -394,7 +395,7 @@
 }
 
 /* 모바일 대응 */
-@media (max-width: 600px) {
+@media (max-width: 768px) {
     .toc-manager-modal {
         padding: 0 !important;
         border-radius: 10px !important;

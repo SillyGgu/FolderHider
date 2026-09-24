@@ -82,9 +82,9 @@ export const themeManager = {
         const rootId = 'folder-hider-theme-vars';
         
         
-        let cssString = `:root {`;
+        let cssString = `.folderhider-settings, .toc-manager-overlay, #rm_characters_block, #PersonaManagement {`;
         for (const [key, value] of Object.entries(theme.colors)) {
-            cssString += `${key}: ${value} !important;`;
+            cssString += `${key}: ${value};`;
         }
         cssString += `}`;
 
@@ -98,8 +98,10 @@ export const themeManager = {
 
         
         if (extension_settings[extensionName]) {
-            extension_settings[extensionName].theme = themeKey;
-            saveSettingsDebounced();
+            if (extension_settings[extensionName].theme !== themeKey) {
+                extension_settings[extensionName].theme = themeKey;
+                saveSettingsDebounced();
+            }
         }
     },
 

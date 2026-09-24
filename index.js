@@ -1,16 +1,21 @@
 import {
     saveSettingsDebounced,
     entitiesFilter,
-    characters
+    characters,
+    getThumbnailUrl,
+    eventSource,
+    event_types
 } from '../../../../script.js';
 
 import { 
     extension_settings
 } from '../../../extensions.js'; 
 
-import {
-    tags
-} from '../../../../scripts/tags.js';
+import { tags, isBogusFolder } from '../../../../scripts/tags.js';
+import { getUserAvatars } from '../../../../scripts/personas.js';
+import { power_user } from '../../../../scripts/power-user.js';
+import { escapeHtml, normalizeSettings, normalizeTocConfig } from './safety.mjs';
+import { getStableIndices } from './stable-order.mjs';
 
 import {
     themeManager
@@ -20,6 +25,7 @@ const extensionName = 'FolderHider';
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 const STYLE_ID = 'folder-hider-css-rules';
 const HIDDEN_CLASS = 'folder-hider-js-hidden'; 
+const COLLAPSED_CLASS = 'folder-hider-collapsed-hidden';
 
 const DEFAULT_SETTINGS = {
     enabled: true,
@@ -32,15 +38,8 @@ const DEFAULT_SETTINGS = {
 };
 
 let settings = extension_settings[extensionName];
-if (!settings || Object.keys(settings).length === 0) {
-    settings = Object.assign({}, DEFAULT_SETTINGS);
-    extension_settings[extensionName] = settings;
-    saveSettingsDebounced();
-} else {
-    settings = Object.assign({}, DEFAULT_SETTINGS, settings);
-    if (!settings.toc) settings.toc = {};
-    extension_settings[extensionName] = settings;
-}
+settings = normalizeSettings(settings || DEFAULT_SETTINGS);
+extension_settings[extensionName] = settings;
 
 let mainListObserver = null;
 let personaListObserver = null;
@@ -56,6 +55,9 @@ function injectCssRules() {
     
     const staticCss = `
         .${HIDDEN_CLASS} {
+            display: none !important;
+        }
+        .${COLLAPSED_CLASS} {
             display: none !important;
         }
 
@@ -329,6 +331,25 @@ function injectCssRules() {
             max-height: 60vh; overflow-y: auto;
             min-width: 160px; font-size: 0.85rem; color: var(--fh-text);
         }
+        @media (max-width: 768px) {
+            #fh_jump_btn {
+                width: 44px; height: 44px;
+                bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+                right: calc(12px + env(safe-area-inset-right, 0px));
+            }
+            #fh_jump_menu {
+                bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+                right: calc(12px + env(safe-area-inset-right, 0px));
+                max-width: calc(100vw - 24px);
+                max-height: 60dvh;
+                box-sizing: border-box;
+            }
+            .fh-jump-item { min-height: 44px; box-sizing: border-box; }
+        }
+        #rm_print_characters_block > .fh-jump-spacer {
+            flex: none;
+            pointer-events: none;
+        }
         .fh-jump-item {
             padding: 6px 10px; cursor: pointer; border-radius: 4px;
             color: var(--fh-text); border-bottom: 1px solid transparent; display: flex; align-items: center;
@@ -376,10 +397,11 @@ function getCurrentContextInfo() {
 
     const filterData = entitiesFilter.getFilterData('tag');
     const selectedTags = filterData ? Array.from(filterData.selected || []) : [];
+    const tagById = new Map(tags.map(tag => [String(tag.id), tag]));
 
     const folderTags = selectedTags
-        .map(tagId => tags.find(t => t.id === tagId))
-        .filter(tag => tag && tag.folder_type);
+        .map(tagId => tagById.get(String(tagId)))
+        .filter(isBogusFolder);
 
     const activeFolderTag = folderTags[folderTags.length - 1];
 
@@ -427,7 +449,7 @@ function getTocConfigForContext(contextInfo, currentItems) {
     return { config: null, key: contextInfo.id, isLegacy: false };
 }
 
-function getDomItems($container) {
+function getDomItems($container, includeDetails = false) {
     const items = [];
     $container.children().each(function() {
         const $el = $(this);
@@ -446,7 +468,7 @@ function getDomItems($container) {
             name = $el.find('.ch_name').text().trim();
             const chid = $el.attr('data-chid');
             
-            description = $el.find('.ch_description').text().trim();
+            if (includeDetails) description = $el.find('.ch_description').text().trim();
 
             if (characters[chid] && characters[chid].avatar) {
                 id = characters[chid].avatar; 
@@ -454,14 +476,14 @@ function getDomItems($container) {
                 id = name;
             }
 
-            $el.find('.tags .tag_name').each(function() {
+            if (includeDetails) $el.find('.tags .tag_name').each(function() {
                 tags.push($(this).text().trim());
             });
         } else if ($el.hasClass('bogus_folder_select')) {
             type = 'folder';
             id = $el.attr('tagid'); 
             name = $el.find('.ch_name').text().trim();
-            $el.find('.tags .tag_name').each(function() {
+            if (includeDetails) $el.find('.tags .tag_name').each(function() {
                 tags.push($(this).text().trim());
             });
         }
@@ -483,73 +505,26 @@ function connectObserver() {
     const target = document.getElementById('rm_print_characters_block');
     if (target && !mainListObserver) {
         mainListObserver = new MutationObserver((mutations) => {
-
-            // FolderHider 자신의 DOM 조작인지 확인 (detach/separator 삽입)
-            const isSelfMutation = mutations.every(mutation =>
-                Array.from(mutation.addedNodes).every(node =>
-                    node.nodeType === 1 && node.classList.contains('char-list-separator')
-                ) &&
-                Array.from(mutation.removedNodes).every(node =>
-                    node.nodeType === 1 && (
-                        node.classList.contains('character_select') ||
-                        node.classList.contains('bogus_folder_select') ||
-                        node.classList.contains('char-list-separator') ||
-                        node.classList.contains('hidden_block')
-                    )
-                )
-            );
-
-            if (isSelfMutation) return;
-
-            // 즉시 숨김 처리 (hidden folder 깜빡임 방지)
-            if (settings.enabled && settings.hiddenFolders.length > 0) {
-                const isSubFolderView = document.getElementById('BogusFolderBack');
-                if (!isSubFolderView) {
-                    const hiddenTitles = settings.hiddenFolders.map(name => `[Folder] ${name.replace(/"/g, '\\"')}`);
-                    mutations.forEach(mutation => {
-                        mutation.addedNodes.forEach(node => {
-                            if (node.nodeType === 1 && node.classList.contains('bogus_folder_select')) {
-                                const title = node.querySelector('span.ch_name')?.getAttribute('title');
-                                if (title && hiddenTitles.includes(title)) {
-                                    node.classList.add(HIDDEN_CLASS);
-                                }
-                            }
-                        });
-                    });
+            if (!settings.enabled || !settings.hiddenFolders.length || document.getElementById('BogusFolderBack')) return;
+            const hiddenTitles = new Set(settings.hiddenFolders.map(name => `[Folder] ${name}`));
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType !== 1 || !node.classList.contains('bogus_folder_select')) continue;
+                    const title = node.querySelector('span.ch_name')?.getAttribute('title');
+                    if (hiddenTitles.has(title)) node.classList.add(HIDDEN_CLASS);
                 }
-            }
-
-            // ST 렌더 완료 신호 판별
-            const hasHiddenBlock = mutations.some(mutation =>
-                Array.from(mutation.addedNodes).some(node =>
-                    node.nodeType === 1 && node.classList.contains('hidden_block')
-                )
-            );
-
-            // 메인화면 완료 신호: hidden_block 없이 bogus_folder_select 또는 character_select가 추가됨
-            const hasCharOrFolder = mutations.some(mutation =>
-                Array.from(mutation.addedNodes).some(node =>
-                    node.nodeType === 1 && (
-                        node.classList.contains('character_select') ||
-                        node.classList.contains('bogus_folder_select')
-                    )
-                )
-            );
-            const isMainRenderComplete = !hasHiddenBlock && hasCharOrFolder;
-
-            // 폴더안 완료 신호: hidden_block이 포함된 append
-            const isFolderRenderComplete = hasHiddenBlock;
-
-            if (isMainRenderComplete || isFolderRenderComplete) {
-                if (observerRaf) cancelAnimationFrame(observerRaf);
-                observerRaf = requestAnimationFrame(() => {
-                    observerRaf = null;
-                    hideFoldersOnListUpdate();
-                });
             }
         });
         mainListObserver.observe(target, { childList: true, subtree: false });
     }
+}
+
+function scheduleCharacterListUpdate() {
+    if (observerRaf) cancelAnimationFrame(observerRaf);
+    observerRaf = requestAnimationFrame(() => {
+        observerRaf = null;
+        hideFoldersOnListUpdate();
+    });
 }
 
 
@@ -601,6 +576,67 @@ function injectJumpButton() {
     }
 }
 
+let cancelActiveJump = null;
+
+function jumpToSeparator(container, separator) {
+    cancelActiveJump?.();
+    container.querySelector(':scope > .fh-jump-spacer')?.remove();
+    if (!container.contains(separator) || !container.clientHeight) return;
+
+    const previousScrollBehavior = container.style.scrollBehavior;
+    const previousOverflowAnchor = container.style.overflowAnchor;
+    container.style.scrollBehavior = 'auto';
+    container.style.overflowAnchor = 'none';
+
+    let spacer = null;
+    let frame = 0;
+    let stableFrames = 0;
+    let rafId = null;
+    const finish = () => {
+        if (rafId !== null) cancelAnimationFrame(rafId);
+        container.removeEventListener('wheel', finish);
+        container.removeEventListener('touchstart', finish);
+        container.removeEventListener('pointerdown', finish);
+        container.style.scrollBehavior = previousScrollBehavior;
+        container.style.overflowAnchor = previousOverflowAnchor;
+        if (cancelActiveJump === finish) cancelActiveJump = null;
+    };
+    cancelActiveJump = finish;
+    container.addEventListener('wheel', finish, { passive: true });
+    container.addEventListener('touchstart', finish, { passive: true });
+    container.addEventListener('pointerdown', finish, { passive: true });
+
+    const align = () => {
+        if (!container.contains(separator)) {
+            spacer?.remove();
+            finish();
+            return;
+        }
+        const delta = separator.getBoundingClientRect().top -
+            container.getBoundingClientRect().top - container.clientTop - 8;
+        const desiredTop = container.scrollTop + delta;
+        const maxTop = container.scrollHeight - container.clientHeight;
+        if (desiredTop > maxTop) {
+            if (!spacer) {
+                spacer = document.createElement('div');
+                spacer.className = 'fh-jump-spacer';
+                spacer.setAttribute('aria-hidden', 'true');
+                container.append(spacer);
+            }
+            spacer.style.height = `${(parseFloat(spacer.style.height) || 0) + Math.ceil(desiredTop - maxTop) + 2}px`;
+        }
+        if (Math.abs(delta) > 2) container.scrollTop = desiredTop;
+
+        const remaining = separator.getBoundingClientRect().top -
+            container.getBoundingClientRect().top - container.clientTop - 8;
+        stableFrames = Math.abs(remaining) <= 2 ? stableFrames + 1 : 0;
+        frame++;
+        if (frame >= 24 || (frame >= 8 && stableFrames >= 6)) finish();
+        else rafId = requestAnimationFrame(align);
+    };
+    align();
+}
+
 function updateJumpMenu() {
     const $menu = $('#fh_jump_menu');
     $menu.empty();
@@ -609,6 +645,8 @@ function updateJumpMenu() {
     const separators = $container.find('.char-list-separator');
 
     if (separators.length === 0) {
+        cancelActiveJump?.();
+        $container.children('.fh-jump-spacer').remove();
         $('#fh_jump_btn').hide(); 
         $menu.hide();
         return;
@@ -620,19 +658,10 @@ function updateJumpMenu() {
         const $sep = $(this);
         const text = $sep.find('span').text();
         
-        const $item = $(`<div class="fh-jump-item"><i class="fa-solid fa-chevron-right"></i> ${text}</div>`);
+        const $item = $(`<div class="fh-jump-item"><i class="fa-solid fa-chevron-right"></i> ${escapeHtml(text)}</div>`);
         
         $item.click(function() {
-            const currentScroll = $container.scrollTop();
-            const sepTop = $sep.offset().top;
-            const containerTop = $container.offset().top;
-            
-            const targetTop = currentScroll + sepTop - containerTop;
-
-            $container[0].scrollTo({
-                top: targetTop,
-                behavior: 'smooth'
-            });
+            jumpToSeparator($container[0], $sep[0]);
             
             $menu.fadeOut(100);
             $('#fh_jump_btn').removeClass('active');
@@ -644,7 +673,9 @@ function updateJumpMenu() {
     $menu.append('<div style="border-top:1px solid #ddd; margin: 4px 0;"></div>');
     const $topItem = $(`<div class="fh-jump-item" style="color:#666;"><i class="fa-solid fa-arrow-up"></i> 맨 위로</div>`);
     $topItem.click(function(){
-         $container[0].scrollTo({ top: 0, behavior: 'smooth' });
+         cancelActiveJump?.();
+         $container.children('.fh-jump-spacer').remove();
+         $container[0].scrollTop = 0;
          $menu.fadeOut(100);
          $('#fh_jump_btn').removeClass('active');
     });
@@ -672,6 +703,12 @@ function addTocButton() {
         event.stopPropagation();
         renderTocManagerPopup();
     });
+    tocButton.on('keydown', function(event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            $(this).trigger('click');
+        }
+    });
 
     const $botBtn = $('#rm_button_bot');
     if ($botBtn.length > 0) {
@@ -686,10 +723,16 @@ function addTocButton() {
 function applyTocOrderToDom($container) {
     if (!settings.enabled) return;
 
-    disconnectObserver();
-
     const contextInfo = getCurrentContextInfo();
     const contextId = contextInfo.id;
+    const hasPossibleConfig = Boolean(settings.toc[contextId]) ||
+        (contextInfo.legacyId !== contextId && Boolean(settings.toc[contextInfo.legacyId]));
+    if (!hasPossibleConfig && !$container.children('.char-list-separator, .' + COLLAPSED_CLASS).length) {
+        if (document.getElementById('fh_jump_btn')?.style.display === 'flex') updateJumpMenu();
+        return;
+    }
+
+    disconnectObserver();
     
     const isVisuallyInFolder = $container.find('#BogusFolderBack').length > 0;
 
@@ -704,6 +747,7 @@ function applyTocOrderToDom($container) {
 
     if (!tocConfig || !tocConfig.items || tocConfig.items.length === 0) {
         $container.find('.char-list-separator').remove();
+        $container.children().removeClass(COLLAPSED_CLASS);
         connectObserver();
         updateJumpMenu(); 
         return;
@@ -716,19 +760,14 @@ function applyTocOrderToDom($container) {
     }
     // -------------------------------------------------------------------------
 
-    $container.css('visibility', 'hidden');
-
-    // 1. 일단 DOM 요소들을 모두 떼어냄 (Detach)
-    currentItems.forEach(item => item.$el.detach());
-
     // 2. 뒤로가기 버튼 처리 (최상단 보장)
     const $backBtn = $container.find('#BogusFolderBack');
-    if ($backBtn.length) {
-        $backBtn.detach();
+    if ($backBtn.length && $container.children().first()[0] !== $backBtn[0]) {
         $container.prepend($backBtn);
     }
 
-    $container.find('.char-list-separator').remove();
+    const previousSeparators = $container.children('.char-list-separator').toArray();
+    let separatorIndex = 0;
 
     // 3. 맵핑 준비 (파일명 기준)
     const itemMap = new Map(); 
@@ -736,12 +775,12 @@ function applyTocOrderToDom($container) {
         const key = `${item.type}_${item.id}`;
         itemMap.set(key, item);
     });
-    const fragment = document.createDocumentFragment();
+    const desiredNodes = [];
     const placedItems = new Set();
     const appendItem = (item) => {
         if (!item || placedItems.has(item)) return;
         placedItems.add(item);
-        fragment.appendChild(item.$el[0]);
+        desiredNodes.push(item.$el[0]);
     };
 
     const excludeFolders = tocConfig.excludeFolders;
@@ -764,12 +803,15 @@ function applyTocOrderToDom($container) {
         if (confItem.type === 'header') {
             const collapseKey = `${contextId}__${confItem.text}`;
             const isCollapsed = settings.collapsed_sections && settings.collapsed_sections[collapseKey];
-            const $sep = $(`
-                <div class="char-list-separator${isCollapsed ? ' fh-collapsed' : ''}" data-collapse-key="${collapseKey}">
-                    <span>${confItem.text}<i class="fa-solid fa-chevron-down fh-collapse-icon"></i></span>
+            const previous = previousSeparators[separatorIndex++];
+            const reusable = previous?.getAttribute('data-collapse-key') === collapseKey;
+            const $sep = reusable ? $(previous) : $(`
+                <div class="char-list-separator${isCollapsed ? ' fh-collapsed' : ''}" data-collapse-key="${escapeHtml(collapseKey)}">
+                    <span>${escapeHtml(confItem.text)}<i class="fa-solid fa-chevron-down fh-collapse-icon"></i></span>
                 </div>
             `);
-            $sep.on('click', function() {
+            $sep.toggleClass('fh-collapsed', Boolean(isCollapsed));
+            if (!reusable) $sep.on('click', function() {
                 const key = $(this).data('collapse-key');
                 const nowCollapsed = $(this).hasClass('fh-collapsed');
                 if (nowCollapsed) {
@@ -777,7 +819,7 @@ function applyTocOrderToDom($container) {
                     if (settings.collapsed_sections) delete settings.collapsed_sections[key];
                     let $next = $(this).next();
                     while ($next.length && !$next.hasClass('char-list-separator')) {
-                        $next.removeClass(HIDDEN_CLASS);
+                        $next.removeClass(COLLAPSED_CLASS);
                         $next = $next.next();
                     }
                 } else {
@@ -786,13 +828,13 @@ function applyTocOrderToDom($container) {
                     settings.collapsed_sections[key] = true;
                     let $next = $(this).next();
                     while ($next.length && !$next.hasClass('char-list-separator')) {
-                        $next.addClass(HIDDEN_CLASS);
+                        $next.addClass(COLLAPSED_CLASS);
                         $next = $next.next();
                     }
                 }
                 saveSettingsDebounced();
             });
-            fragment.appendChild($sep[0]);
+            desiredNodes.push($sep[0]);
         } else {
             if (confItem.type === 'folder' && excludeFolders) return; 
 
@@ -816,24 +858,40 @@ function applyTocOrderToDom($container) {
         appendItem(item);
     });
 
-    $container[0].appendChild(fragment);
+    // Avoid moving the whole character list when its order is already correct.
+    const existingNodes = $container.children('.character_select, .bogus_folder_select, .char-list-separator')
+        .not('#BogusFolderBack').toArray();
+    const orderChanged = desiredNodes.length !== existingNodes.length ||
+        desiredNodes.some((node, index) => node !== existingNodes[index]);
+    if (orderChanged) {
+        previousSeparators.filter(node => !desiredNodes.includes(node)).forEach(node => node.remove());
+        const positions = new Map(existingNodes.map((node, index) => [node, index]));
+        const stable = getStableIndices(desiredNodes.map(node => positions.get(node) ?? -1));
+        let anchor = $container.children('.hidden_block').first()[0] || null;
+        for (let index = desiredNodes.length - 1; index >= 0; index--) {
+            const node = desiredNodes[index];
+            if (!stable.has(index)) $container[0].insertBefore(node, anchor);
+            anchor = node;
+        }
+    }
 
     // (D) 히든 카운터 블록 처리
     const $hiddenBlock = $container.find('.hidden_block');
-    $hiddenBlock.detach();
-    $container.append($hiddenBlock);
+    if ($hiddenBlock.length && $container.children().last()[0] !== $hiddenBlock[0]) {
+        $container.append($hiddenBlock);
+    }
 
+    $container.children('.' + COLLAPSED_CLASS).removeClass(COLLAPSED_CLASS);
     if (settings.collapsed_sections) {
         $container.find('.char-list-separator.fh-collapsed').each(function() {
             let $next = $(this).next();
             while ($next.length && !$next.hasClass('char-list-separator')) {
-                $next.addClass(HIDDEN_CLASS);
+                $next.addClass(COLLAPSED_CLASS);
                 $next = $next.next();
             }
         });
     }
 
-    $container.css('visibility', '');
     connectObserver();
     
     updateJumpMenu();
@@ -842,24 +900,26 @@ function applyTocOrderToDom($container) {
 
 function hideFoldersOnListUpdate() {
     const $characterBlock = $('#rm_print_characters_block');
+    if (!$characterBlock.length) return;
     
     if (settings.enabled) {
         applyTocOrderToDom($characterBlock);
+    } else {
+        disconnectObserver();
+        $characterBlock.find('.char-list-separator').remove();
+        $characterBlock.children().removeClass(COLLAPSED_CLASS);
+        connectObserver();
+        updateJumpMenu();
     }
 
-    $characterBlock.find('.bogus_folder_select').removeClass(HIDDEN_CLASS);
-    
-    if (settings.enabled && settings.hiddenFolders.length > 0) {
-        const isSubFolderView = $characterBlock.find('#BogusFolderBack').length > 0;
-        const hiddenTitles = settings.hiddenFolders.map(name => `[Folder] ${name.replace(/"/g, '\\"')}`);
-
-        if (!isSubFolderView) {
-            $characterBlock.find('div.bogus_folder_select').each(function() {
-                const title = $(this).find('span.ch_name').attr('title');
-                if (title && hiddenTitles.includes(title)) {
-                    $(this).addClass(HIDDEN_CLASS);
-                }
-            });
+    const canHide = settings.enabled && settings.hiddenFolders.length > 0 &&
+        !$characterBlock.find('#BogusFolderBack').length;
+    const hiddenTitles = canHide ? new Set(settings.hiddenFolders.map(name => `[Folder] ${name}`)) : null;
+    for (const folder of $characterBlock[0].querySelectorAll('.bogus_folder_select')) {
+        const title = folder.querySelector('span.ch_name')?.getAttribute('title');
+        const shouldHide = Boolean(hiddenTitles?.has(title));
+        if (folder.classList.contains(HIDDEN_CLASS) !== shouldHide) {
+            folder.classList.toggle(HIDDEN_CLASS, shouldHide);
         }
     }
 }
@@ -874,7 +934,7 @@ function renderTocManagerPopup() {
     const contextTagName = contextId === 'root' ? '메인 목록 (Root)' : contextInfo.name;
 
     const $container = $('#rm_print_characters_block');
-    const currentItems = getDomItems($container); 
+    const currentItems = getDomItems($container, true);
     const contextLookup = getTocConfigForContext(contextInfo, currentItems);
     const savedConfig = contextLookup.config || { excludeFolders: true, items: [] };
 
@@ -916,7 +976,7 @@ function renderTocManagerPopup() {
     
     currentItemMap.forEach((val) => workingList.push(val));
 
-    const tagOptionsHtml = sortedTags.map(tag => `<option value="${tag}">`).join('');
+    const tagOptionsHtml = sortedTags.map(tag => `<option value="${escapeHtml(tag)}">`).join('');
     
     const displayTitle = isConfigMismatch 
         ? `${contextTagName} (주의: 상위 설정 분리됨)` 
@@ -925,7 +985,7 @@ const popupHtml = `
         <div class="toc-manager-overlay" id="toc_manager_popup">
 			<div class="toc-manager-modal" id="toc_manager_modal_inner">
 				<div class="toc-header" style="display:flex; align-items:center; justify-content:space-between; padding: 18px 24px; border-bottom: 1px solid var(--fh-border);">
-					<span style="font-size:1.1rem; font-weight:700; letter-spacing:-0.3px;">${displayTitle}</span>
+                    <span style="font-size:1.1rem; font-weight:700; letter-spacing:-0.3px;">${escapeHtml(displayTitle)}</span>
                     <i class="fa-solid fa-xmark close-toc-btn" style="cursor:pointer; font-size:1.2rem; opacity:0.6; transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6"></i>
                 </div>
                 
@@ -1032,7 +1092,7 @@ const popupHtml = `
             if (searchQuery && item.type !== 'header' && !item.name.toLowerCase().includes(searchQuery)) return;
 
             if (item.type === 'header') {
-                $targetSelect.append(`<option value="${index}">[구분선] ${item.text}</option>`);
+                $targetSelect.append(`<option value="${index}">[구분선] ${escapeHtml(item.text)}</option>`);
             }
 
             let isHidden = false;
@@ -1050,9 +1110,9 @@ const popupHtml = `
             let infoBtnHtml = '';
             if (!isHeader) {
                 const tagsHtml = (item.tags && item.tags.length > 0) 
-                    ? item.tags.map(t => `<span class="toc-tag-pill">${t}</span>`).join('') 
+                    ? item.tags.map(t => `<span class="toc-tag-pill">${escapeHtml(t)}</span>`).join('') 
                     : '';
-                const descHtml = (item.description) ? `<div class="toc-desc-text">${item.description}</div>` : '';
+                const descHtml = (item.description) ? `<div class="toc-desc-text">${escapeHtml(item.description)}</div>` : '';
                 
                 if (tagsHtml || descHtml) {
                     infoBtnHtml = `
@@ -1071,10 +1131,10 @@ const popupHtml = `
             if (!isHeader && showImages) {
 				const chid = avatarToChid.get(item.id);
 				const imgSrc = (chid !== undefined && characters[chid] && characters[chid].avatar)
-					? `/characters/${characters[chid].avatar}`
+					? `/characters/${encodeURIComponent(characters[chid].avatar)}`
 					: null;
                 avatarHtml = imgSrc
-                    ? `<img src="${imgSrc}" class="toc-char-avatar" alt="${item.name}" onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='flex');">`
+                    ? `<img src="${escapeHtml(imgSrc)}" class="toc-char-avatar" alt="${escapeHtml(item.name)}">`
                     : `<div class="toc-avatar-placeholder"><i class="fa-solid fa-user"></i></div>`;
             }
 
@@ -1085,7 +1145,7 @@ const popupHtml = `
                     <input type="checkbox" class="toc-item-checkbox" ${isChecked}>
                     ${avatarHtml}
                     ${!showImages || isHeader ? `<i class="fa-solid ${iconClass}"></i>` : ''}
-                    <span class="toc-item-name" ${isHeader ? 'contenteditable="true"' : ''}>${name}</span>
+                    <span class="toc-item-name" ${isHeader ? 'contenteditable="true"' : ''}>${escapeHtml(name)}</span>
                     <div class="toc-controls">
                         ${infoBtnHtml}
                         <div class="toc-btn up"><i class="fa-solid fa-arrow-up"></i></div>
@@ -1373,6 +1433,14 @@ function onExportSettings() {
     alert(msg);
 }
 
+function onExportAllSettings() {
+    $('#setting_backup_area').val(JSON.stringify({
+        ...settings,
+        version: 3,
+        type: 'full_backup',
+    }));
+}
+
 function onImportSettings() {
     const jsonStr = $('#setting_backup_area').val().trim();
     if (!jsonStr) { alert('내용이 없습니다.'); return; }
@@ -1381,13 +1449,15 @@ function onImportSettings() {
         const parsed = JSON.parse(jsonStr);
 
         // 1. 신규 방식: 특정 목록(폴더)만 백업한 데이터인 경우
-        if (parsed.type === 'context_backup' && parsed.contextId && parsed.data) {
+        if (parsed?.type === 'context_backup' && typeof parsed.contextId === 'string' &&
+            !['__proto__', 'constructor', 'prototype'].includes(parsed.contextId) &&
+            parsed.data && typeof parsed.data === 'object' && Array.isArray(parsed.data.items)) {
             const targetId = parsed.contextId;
             const targetName = parsed.data.folderName || targetId;
 
             if (confirm(`[${targetName}] 목록의 설정을 불러옵니다.\n\n이 작업은 다른 폴더의 설정은 건드리지 않고,\n현재 보고 있는 목록(또는 지정된 폴더)의 순서만 변경합니다.\n진행하시겠습니까?`)) {
                 
-                settings.toc[targetId] = parsed.data;
+                settings.toc[targetId] = normalizeTocConfig(parsed.data);
                 extension_settings[extensionName] = settings;
                 saveSettingsDebounced();
 
@@ -1401,12 +1471,15 @@ function onImportSettings() {
         }
 
         // 2. 구형 방식: 전체 설정 백업본인 경우 (기존 호환성 유지)
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !parsed.toc) {
+            throw new Error('Invalid FolderHider backup');
+        }
         if (!confirm('경고: 전체 설정 백업본으로 보입니다.\n\n이 데이터를 불러오면 "모든 폴더"의 숨김 설정과 순서가\n이 파일의 내용으로 완전히 덮어씌워집니다.\n\n진행하시겠습니까?')) return;
         
         const fixItems = (items) => {
             if (!Array.isArray(items)) return [];
             return items.map(item => {
-                if (item.type === 'char') {
+                if (item && item.type === 'char' && typeof item.id === 'string') {
                     let found = characters.find(c => c.avatar === item.id);
                     if (!found) {
                         let guessName = item.id;
@@ -1431,11 +1504,15 @@ function onImportSettings() {
             }
         }
 
-        settings = parsed;
+        settings = normalizeSettings(parsed);
         extension_settings[extensionName] = settings;
         saveSettingsDebounced();
 
         $('#folder_hider_enable_toggle').prop('checked', settings.enabled);
+        currentPersonaFolder = settings.last_persona_folder;
+        renderPersonaTabs();
+        applyPersonaFolderFilter();
+        themeManager.applyTheme(settings.theme);
         renderHiddenFolderList();
         hideFoldersOnListUpdate(); 
         
@@ -1454,16 +1531,9 @@ function onImportSettings() {
 let currentPersonaFolder = 'All'; 
 
 function initPersonaExtension() {
-    if (!settings.persona_folders) {
-        settings.persona_folders = {};
-    }
-    
     if (settings.last_persona_folder) {
         currentPersonaFolder = settings.last_persona_folder;
     }
-
-    settings.persona_folders = settings.persona_folders || {};
-    saveSettingsDebounced();
 
     let retryCount = 0;
     const maxRetries = 60;
@@ -1525,19 +1595,22 @@ function renderPersonaTabs() {
     const folders = Object.keys(settings.persona_folders).sort();
     folders.forEach(folder => {
         const isActive = currentPersonaFolder === folder ? 'active' : '';
-        $bar.append(`<div class="persona-folder-tab ${isActive}" data-folder="${folder}"><i class="fa-solid fa-folder"></i> ${folder}</div>`);
+        $bar.append(`<div class="persona-folder-tab ${isActive}" data-folder="${escapeHtml(folder)}"><i class="fa-solid fa-folder"></i> ${escapeHtml(folder)}</div>`);
     });
 
     // 4. 편집 버튼
     $bar.append(`<div class="persona-folder-settings-btn" title="폴더 추가/삭제"><i class="fa-solid fa-gear"></i></div>`);
 
     $bar.find('.persona-folder-tab').click(function() {
-        currentPersonaFolder = $(this).data('folder');
+        const nextFolder = $(this).data('folder');
+        if (nextFolder === currentPersonaFolder) return;
+        currentPersonaFolder = nextFolder;
 
         settings.last_persona_folder = currentPersonaFolder;
         saveSettingsDebounced();
 
-        renderPersonaTabs(); 
+        $bar.find('.persona-folder-tab').removeClass('active');
+        $(this).addClass('active');
         applyPersonaFolderFilter();
     });
 
@@ -1587,11 +1660,11 @@ function openFolderEditPrompt() {
 
     if (action === "1") {
         const newName = prompt("새 폴더 이름 입력:");
-        if (newName && !settings.persona_folders[newName]) {
+        if (newName && !Object.hasOwn(settings.persona_folders, newName) && !['All', 'Uncategorized', '__remove__'].includes(newName)) {
             settings.persona_folders[newName] = [];
             saveSettingsDebounced();
             renderPersonaTabs();
-        } else if (settings.persona_folders[newName]) {
+        } else if (newName) {
             alert("이미 존재하는 폴더입니다.");
         }
     } else if (action === "2") {
@@ -1601,12 +1674,17 @@ function openFolderEditPrompt() {
         const oldName = prompt(`이름을 변경할 폴더명을 정확히 입력하세요:\n(${folders.join(', ')})`);
         if (oldName && settings.persona_folders[oldName]) {
             const newName = prompt("새 이름 입력:", oldName);
-            if (newName && newName !== oldName) {
+            if (newName && newName !== oldName && !Object.hasOwn(settings.persona_folders, newName) && !['All', 'Uncategorized', '__remove__'].includes(newName)) {
                 settings.persona_folders[newName] = settings.persona_folders[oldName];
                 delete settings.persona_folders[oldName];
-                if (currentPersonaFolder === oldName) currentPersonaFolder = newName;
+                if (currentPersonaFolder === oldName) {
+                    currentPersonaFolder = newName;
+                    settings.last_persona_folder = newName;
+                }
                 saveSettingsDebounced();
                 renderPersonaTabs();
+            } else if (newName && newName !== oldName) {
+                alert('이미 존재하거나 사용할 수 없는 폴더 이름입니다.');
             }
         }
     } else if (action === "3") {
@@ -1617,7 +1695,10 @@ function openFolderEditPrompt() {
         if (target && settings.persona_folders[target]) {
             if (confirm(`정말 [${target}] 폴더를 삭제하시겠습니까?`)) {
                 delete settings.persona_folders[target];
-                if (currentPersonaFolder === target) currentPersonaFolder = 'All';
+                if (currentPersonaFolder === target) {
+                    currentPersonaFolder = 'All';
+                    settings.last_persona_folder = 'All';
+                }
                 saveSettingsDebounced();
                 renderPersonaTabs();
                 applyPersonaFolderFilter();
@@ -1647,44 +1728,29 @@ function connectPersonaObserver() {
 }
 
 function applyPersonaFolderFilter() {
-    const $avatars = $('#user_avatar_block .avatar-container');
-    
-    if (currentPersonaFolder === 'All') {
-        $avatars.removeClass(HIDDEN_CLASS);
-        return;
+    const avatars = document.querySelectorAll('#user_avatar_block .avatar-container');
+    const showAll = currentPersonaFolder === 'All';
+    const folderItems = showAll ? null : new Set(settings.persona_folders[currentPersonaFolder] || []);
+    const allCategorized = currentPersonaFolder === 'Uncategorized'
+        ? new Set(Object.values(settings.persona_folders).flat()) : null;
+
+    for (const avatar of avatars) {
+        const id = avatar.getAttribute('data-avatar-id');
+        const shouldHide = !showAll && (allCategorized ? allCategorized.has(id) : !folderItems.has(id));
+        if (avatar.classList.contains(HIDDEN_CLASS) !== shouldHide) {
+            avatar.classList.toggle(HIDDEN_CLASS, shouldHide);
+        }
     }
-
-    const folderItems = new Set(settings.persona_folders[currentPersonaFolder] || []);
-    const allCategorized = new Set();
-    Object.values(settings.persona_folders).forEach(list => list.forEach(id => allCategorized.add(id)));
-
-    $avatars.each(function() {
-        const $el = $(this);
-        const id = $el.attr('data-avatar-id');
-
-        let shouldShow = false;
-
-        if (currentPersonaFolder === 'Uncategorized') {
-            if (!allCategorized.has(id)) shouldShow = true;
-        } else {
-            if (folderItems.has(id)) shouldShow = true;
-        }
-
-        if (shouldShow) {
-            $el.removeClass(HIDDEN_CLASS);
-        } else {
-            $el.addClass(HIDDEN_CLASS);
-        }
-    });
 }
 
 // =========================================================================
 // 6. Logic: Persona Bulk Manager Popup
 // =========================================================================
 
-function openPersonaBulkManager() {
+async function openPersonaBulkManager() {
+    if ($('#persona_manager_popup').length) return;
     const $overlay = $('<div class="toc-manager-overlay" id="persona_manager_popup"></div>');
-    const folderOptions = Object.keys(settings.persona_folders).map(f => `<option value="${f}">${f}</option>`).join('');
+    const folderOptions = Object.keys(settings.persona_folders).map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
     
 const popupHtml = `
         <div class="toc-manager-modal" id="pm_modal_inner" style="max-width: 750px;">
@@ -1801,11 +1867,24 @@ const popupHtml = `
     $overlay.find('.close-popup-btn').click(close);
 
     const allPersonas = [];
-    $('#user_avatar_block .avatar-container').each(function() {
-        const id = $(this).attr('data-avatar-id');
-        const name = $(this).find('.ch_name').text().trim();
-        const addInfo = $(this).find('.ch_additional_info').text().trim();
-        const imgSrc = $(this).find('.avatar img').attr('src');
+    let personaIds;
+    try {
+        personaIds = await getUserAvatars(false);
+    } catch (error) {
+        console.error('[FolderHider] Failed to load personas:', error);
+        close();
+        alert('페르소나 목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
+        return;
+    }
+    if (!Array.isArray(personaIds)) {
+        close();
+        alert('페르소나 목록 형식이 올바르지 않습니다.');
+        return;
+    }
+    for (const id of personaIds) {
+        const name = String(power_user.personas[id] || '[Unnamed Persona]');
+        const addInfo = String(power_user.persona_descriptions[id]?.title || '');
+        const imgSrc = getThumbnailUrl('persona', id);
         
         let cleanName = name.replace(/^[\s\p{P}\p{S}]+/u, ''); 
         const firstChar = cleanName.charAt(0) || name.charAt(0); 
@@ -1820,14 +1899,13 @@ const popupHtml = `
         for (const [fName, fList] of Object.entries(settings.persona_folders)) {
             if (fList.includes(id)) myFolders.push(fName);
         }
-
-        allPersonas.push({ id, name, addInfo, imgSrc, lang, folders: myFolders, _el: this });
-    });
+        allPersonas.push({ id, name, addInfo, imgSrc, lang, folders: myFolders });
+    }
 
     const renderList = () => {
         const $list = $('#pm_list_body');
         $list.empty();
-        
+
         const searchQuery = $('#pm_search_input').val().toLowerCase();
         const filterFolder = $('#pm_filter_folder').val();
         const filterLang = $('#pm_filter_lang').val();
@@ -1837,38 +1915,33 @@ const popupHtml = `
         allPersonas.forEach((p, idx) => {
             if (searchQuery && !p.name.toLowerCase().includes(searchQuery) && !p.addInfo.toLowerCase().includes(searchQuery)) return;
             if (filterLang && p.lang !== filterLang) return;
-            
+
             if (filterFolder === '__uncategorized__') {
                 if (p.folders.length > 0) return;
             } else if (filterFolder && filterFolder !== '') {
                 if (!p.folders.includes(filterFolder)) return;
             }
 
-            const folderBadges = p.folders.map(f => `<span class="persona-folder-badge"><i class="fa-solid fa-folder" style="margin-right:3px;"></i>${f}</span>`).join('');
+            const folderBadges = p.folders.map(f => `<span class="persona-folder-badge"><i class="fa-solid fa-folder" style="margin-right:3px;"></i>${escapeHtml(f)}</span>`).join('');
             const isSelected = p._selected ? 'selected' : '';
             const checked = p._selected ? 'checked' : '';
-            
-            const imgHtml = showImages && p.imgSrc ? `<img src="${p.imgSrc}" class="pm-avatar-img" alt="avatar">` : '';
-            const addInfoHtml = p.addInfo ? `<span class="pm-add-info">${p.addInfo}</span>` : '';
-
-            const itemHtml = `
+            const imgHtml = showImages && p.imgSrc ? `<img src="${escapeHtml(p.imgSrc)}" class="pm-avatar-img" alt="avatar">` : '';
+            const addInfoHtml = p.addInfo ? `<span class="pm-add-info">${escapeHtml(p.addInfo)}</span>` : '';
+            htmlParts.push(`
                 <div class="toc-item ${isSelected}" data-idx="${idx}" style="padding: 8px 10px;">
                     <input type="checkbox" class="toc-item-checkbox" ${checked}>
                     ${imgHtml}
                     <div style="display:flex; flex-direction:column; flex:1; overflow:hidden;">
                         <div class="pm-name-block">
-                            <span class="toc-item-name" style="font-weight:700; font-size:1.05em; color:var(--fh-text);">${p.name}</span>
+                            <span class="toc-item-name" style="font-weight:700; font-size:1.05em; color:var(--fh-text);">${escapeHtml(p.name)}</span>
                             ${addInfoHtml}
                             <div style="margin-left:auto; display:flex; gap:4px;">${folderBadges}</div>
                         </div>
                     </div>
-                </div>
-            `;
-            htmlParts.push(itemHtml);
+                </div>`);
         });
 
         if (htmlParts.length) $list.append(htmlParts.join(''));
-
         $list.find('.toc-item').click(function(e) {
             if ($(e.target).is('input')) return;
             const idx = $(this).data('idx');
@@ -1876,7 +1949,6 @@ const popupHtml = `
             $(this).toggleClass('selected');
             $(this).find('.toc-item-checkbox').prop('checked', allPersonas[idx]._selected);
         });
-        
         $list.find('.toc-item-checkbox').change(function() {
             const $item = $(this).closest('.toc-item');
             const idx = $item.data('idx');
@@ -1910,7 +1982,6 @@ const popupHtml = `
         if (selectedItems.length === 0) return alert("선택된 페르소나가 없습니다.");
 
         let count = 0;
-        
         if (targetFolder === '__remove__') {
             selectedItems.forEach(p => {
                 let changed = false;
@@ -1935,11 +2006,9 @@ const popupHtml = `
                     const idx = list.indexOf(p.id);
                     if (idx !== -1) list.splice(idx, 1);
                 }
-                
                 if (!settings.persona_folders[targetFolder].includes(p.id)) {
                     settings.persona_folders[targetFolder].push(p.id);
                 }
-                
                 p.folders = [targetFolder];
                 p._selected = false;
                 count++;
@@ -1947,7 +2016,7 @@ const popupHtml = `
         }
 
         saveSettingsDebounced();
-        renderList(); 
+        renderList();
         alert(`${count}개의 페르소나가 처리되었습니다.`);
     });
 
@@ -1998,8 +2067,8 @@ function renderHiddenFolderList() {
     folders.forEach(name => {
         $container.append(`
             <div class="folder-list-item">
-                <span class="folder-name">${name}</span>
-                <button class="delete-btn" data-name="${name}"><i class="fa-solid fa-trash-can"></i>삭제</button>
+                <span class="folder-name">${escapeHtml(name)}</span>
+                <button class="delete-btn" data-name="${escapeHtml(name)}"><i class="fa-solid fa-trash-can"></i>삭제</button>
             </div>
         `);
     });
@@ -2031,6 +2100,7 @@ function renderHiddenFolderList() {
         $('#open_toc_manager_btn').click(renderTocManagerPopup);
         
         $('#export_settings_btn').click(onExportSettings);
+        $('#export_all_settings_btn').click(onExportAllSettings);
         $('#import_settings_btn').click(onImportSettings);
 
         renderHiddenFolderList();
@@ -2042,17 +2112,18 @@ function renderHiddenFolderList() {
     injectJumpButton(); 
     addTocButton();
     connectObserver();
+    eventSource.on(event_types.CHARACTER_PAGE_LOADED, scheduleCharacterListUpdate);
     themeManager.init(settings.theme);
 	
     // 다음 업데이트 때: CURRENT_NOTICE_ID를 v2로 바꾸고, CURRENT_NOTICE_HTML에 새 내용을 적기만 하면 됩니다.
-    const CURRENT_NOTICE_ID = 'patch_2026_01_fix_v1'; 
+    const CURRENT_NOTICE_ID = 'patch_2026_09_compat_v1'; 
 
     // 이번 공지사항의 내용 (HTML 태그 사용 가능)
     const CURRENT_NOTICE_HTML = `
         <p>
-            최근 <b>폴더 간 목차 꼬임 현상</b> 및 <b>백업 오류</b>가 수정되었습니다.<br>
-            이전 버전에서 목차가 섞였다면, <b>[목차/순서 설정]</b> 탭에서 
-            <b>'초기화'</b> 버튼을 눌러 정리한 뒤 다시 설정해주시기 바랍니다.
+            최신 SillyTavern 호환성을 개선했습니다.<br>
+            페르소나 일괄 관리에서 모든 페이지의 항목을 표시하고,
+            목차 및 숨김 상태의 적용 오류를 수정했습니다.
         </p>
     `;
 
