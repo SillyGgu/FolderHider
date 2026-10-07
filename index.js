@@ -16,6 +16,7 @@ import { getUserAvatars } from '../../../../scripts/personas.js';
 import { power_user } from '../../../../scripts/power-user.js';
 import { escapeHtml, normalizeSettings, normalizeTocConfig } from './safety.mjs';
 import { getStableIndices } from './stable-order.mjs';
+import { bindManagerViewport, getManagerScrollElement } from './manager-viewport.mjs';
 
 import {
     themeManager
@@ -256,6 +257,145 @@ function injectCssRules() {
             padding: 15px; background: var(--fh-bg); border-top: 1px solid var(--fh-border); 
             display: flex; gap: 10px; justify-content: flex-end; 
         }
+
+        /* Bound both managers to the visible screen, never to #chat's rectangle.
+           Keep the header/footer outside the scrolling middle section. */
+        .fh-viewport-manager {
+            top: var(--fh-viewport-top, 0px); left: var(--fh-viewport-left, 0px);
+            width: var(--fh-viewport-width, 100vw);
+            height: var(--fh-viewport-height, 100vh);
+            height: var(--fh-viewport-height, 100dvh);
+            box-sizing: border-box; overflow: hidden;
+            padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px))
+                     max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+        }
+        .fh-viewport-manager .toc-manager-modal {
+            position: relative; inset: auto; transform: none; margin: 0;
+            box-sizing: border-box; min-width: 0; min-height: 0;
+            width: 90%; height: 100%; max-height: 92%; flex: none;
+        }
+        .fh-viewport-manager .toc-header, .fh-viewport-manager .toc-footer {
+            flex: none; min-width: 0; gap: 8px;
+        }
+        .fh-viewport-manager .toc-header > span { min-width: 0; overflow-wrap: anywhere; }
+        .fh-viewport-manager .fh-manager-close {
+            display: flex; align-items: center; justify-content: center; flex: none;
+            width: 44px; height: 44px; padding: 0; border: 0; border-radius: 7px;
+            background: transparent; color: var(--fh-text); font-size: 1.4rem; cursor: pointer;
+        }
+        .fh-manager-content {
+            display: flex; flex-direction: column; flex: 1 1 auto;
+            min-width: 0; min-height: 0; overflow: hidden;
+        }
+        .fh-selection-actions, .fh-tag-selection { display: contents; }
+        .fh-viewport-manager .toc-toolbar { flex: none; min-width: 0; }
+        .fh-viewport-manager .toc-toolbar-row { min-width: 0; flex-wrap: wrap; }
+        .fh-viewport-manager .toc-toolbar-row > div { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+        .fh-viewport-manager .toc-toolbar input, .fh-viewport-manager .toc-toolbar select {
+            min-width: 0 !important; max-width: 100%; box-sizing: border-box;
+        }
+        .fh-viewport-manager .toc-body { flex: 1 1 auto; min-width: 0; min-height: 0; }
+        .fh-viewport-manager .toc-footer { flex-wrap: wrap; }
+        .fh-viewport-manager .toc-footer button { max-width: 100%; }
+        .fh-manager-compact .fh-manager-content { overflow-y: auto; overscroll-behavior: contain; }
+        .fh-manager-compact .toc-body { flex: none; overflow-y: visible !important; }
+        @media (max-width: 1000px) {
+            .fh-viewport-manager .toc-manager-modal { width: 100%; max-height: 100%; }
+            .fh-viewport-manager .toc-header, .fh-viewport-manager .toc-toolbar,
+            .fh-viewport-manager .toc-body, .fh-viewport-manager .toc-footer { padding: 10px 12px !important; }
+            .fh-viewport-manager .toc-toolbar input, .fh-viewport-manager .toc-toolbar select,
+            .fh-viewport-manager .toc-body input[type="text"] { font-size: 16px !important; }
+            .fh-viewport-manager #pm_search_input { flex: 1 1 100% !important; width: 100%; }
+            .fh-viewport-manager #pm_filter_lang, .fh-viewport-manager #pm_filter_folder { flex: 1 1 120px; }
+            .fh-viewport-manager .fh-pm-selection-controls, .fh-viewport-manager .fh-pm-move-controls { flex: 1 1 100%; }
+            .fh-viewport-manager #pm_target_folder, .fh-viewport-manager #toc_move_target_select { flex: 1 1 140px; }
+            .fh-viewport-manager #toc_tag_filter_input { flex: 1 1 150px; }
+            .fh-viewport-manager #pm_status { flex: 1 1 160px; }
+
+            /* Touch scrolling stays enabled; ST's wide scrollbar consumes no space. */
+            .fh-viewport-manager, .fh-viewport-manager * { scrollbar-width: none !important; }
+            .fh-viewport-manager::-webkit-scrollbar,
+            .fh-viewport-manager *::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+
+            .fh-viewport-manager .toc-header, .fh-viewport-manager .toc-footer { padding: 6px 10px !important; }
+            .fh-viewport-manager .toc-header > span { font-size: 1rem !important; line-height: 1.3; }
+            .fh-viewport-manager .fh-manager-close { width: 36px; height: 36px; font-size: 1.25rem; }
+            .fh-viewport-manager .toc-toolbar { padding: 8px 10px !important; gap: 6px !important; }
+            .fh-viewport-manager .toc-toolbar-row { gap: 6px !important; }
+            .fh-viewport-manager .toc-toolbar button,
+            .fh-viewport-manager .toc-footer button {
+                min-height: 32px; margin: 0; padding: 4px 8px !important; line-height: 1.25;
+                border-radius: 6px !important; font-size: .78rem !important; box-shadow: none;
+            }
+            .fh-viewport-manager .toc-toolbar input:not([type="checkbox"]),
+            .fh-viewport-manager .toc-toolbar select {
+                width: 100%; height: 32px; min-height: 32px; margin: 0;
+                padding: 4px 8px !important; line-height: 1.25; border-radius: 6px !important;
+            }
+            .fh-viewport-manager .fh-toolbar-divider { display: none; }
+            .fh-viewport-manager .fh-pm-search-controls {
+                display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .fh-viewport-manager .fh-pm-search-controls #pm_search_input { grid-column: 1 / -1; }
+            .fh-viewport-manager .fh-pm-selection-controls,
+            .fh-viewport-manager .fh-toc-selection-controls {
+                display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr));
+                align-items: center !important; gap: 6px !important;
+            }
+            .fh-viewport-manager .fh-selection-actions {
+                display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px;
+                width: fit-content; max-width: 100%;
+            }
+            .fh-viewport-manager .fh-selection-actions button { padding-inline: 5px !important; font-size: .78rem !important; }
+            .fh-viewport-manager .fh-view-switch {
+                display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 2px; width: fit-content; max-width: 100%; justify-self: end; margin: 0; padding: 1px;
+                border: 1px solid var(--fh-border); border-radius: 7px; background: var(--fh-hover-bg);
+            }
+            .fh-viewport-manager .fh-view-switch button {
+                min-width: 0; min-height: 28px; padding: 4px 6px !important;
+                border: 0; border-radius: 5px !important; font-size: .78rem !important;
+            }
+            .fh-viewport-manager .fh-toc-selection-controls > .fh-view-switch,
+            .fh-viewport-manager .fh-pm-selection-controls > .fh-view-switch { grid-column: 2; grid-row: 1; }
+            .fh-viewport-manager .fh-tag-selection {
+                display: grid; grid-column: 1 / -1;
+                grid-template-columns: minmax(0, 1fr) auto; gap: 6px;
+            }
+            .fh-viewport-manager .fh-tag-selection #toc_tag_filter_input { width: 100% !important; }
+            .fh-viewport-manager .fh-image-toggle {
+                grid-column: 1 / -1; display: flex !important; align-items: center;
+                gap: 5px !important; min-height: 22px; margin: 0; font-size: .78rem !important;
+            }
+            .fh-viewport-manager .fh-image-toggle input[type="checkbox"] {
+                flex: none; width: 20px; height: 20px; min-height: 0;
+                padding: 0; margin: 0 2px 0 0;
+            }
+            .fh-viewport-manager .fh-manager-move-controls {
+                display: grid !important; grid-template-columns: auto minmax(0, 1fr) auto;
+                align-items: center !important; gap: 6px !important;
+            }
+            .fh-viewport-manager .fh-manager-move-controls > span { font-size: .72rem !important; }
+            .fh-viewport-manager #toc_move_execute_btn, .fh-viewport-manager #pm_execute_move {
+                background: var(--fh-accent); color: #fff; border-color: var(--fh-accent);
+            }
+            .fh-viewport-manager #pm_drop_targets { padding: 8px 12px; gap: 6px; }
+            .fh-viewport-manager .pm-drop-target {
+                min-height: 40px; padding: 7px 12px; border-radius: 8px; font-size: .82rem;
+            }
+            .fh-viewport-manager #toc_manager_modal_inner > .toc-footer {
+                display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px !important;
+            }
+            .fh-viewport-manager #toc_manager_modal_inner > .toc-footer button { width: 100% !important; white-space: normal; }
+            .fh-viewport-manager .save-toc-btn { background: var(--fh-accent); color: #fff; border-color: var(--fh-accent); }
+            .fh-viewport-manager #pm_status { font-size: .74rem !important; }
+            .fh-viewport-manager .toc-checkbox-row { padding: 8px 10px !important; gap: 6px !important; }
+            .fh-viewport-manager .toc-checkbox-row > div { gap: 8px !important; }
+            .fh-viewport-manager .toc-checkbox-row label { font-size: .8rem !important; }
+            .fh-viewport-manager #toc_search_input {
+                min-height: 32px; padding: 4px 32px 4px 10px !important; line-height: 1.25;
+            }
+        }
         
         
         .toc-item {
@@ -374,7 +514,7 @@ function injectCssRules() {
             font-size: 0.75rem; color: var(--fh-text); opacity: 0.4;
         }
 
-        #toc_manager_modal_inner { max-width: 1100px; max-height: 92dvh; }
+        #toc_manager_modal_inner { max-width: 1100px; }
         #toc_items_list {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
@@ -525,7 +665,7 @@ function injectCssRules() {
             font-size: 0.75rem; background: var(--fh-secondary); color: var(--fh-text);
             padding: 2px 6px; border-radius: 4px; margin-left: 5px;
         }
-        #pm_modal_inner { max-width: 1000px; max-height: 92dvh; }
+        #pm_modal_inner { max-width: 1000px; }
         #pm_list_body {
             display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
             align-content: start; gap: 12px; overscroll-behavior: contain;
@@ -1340,6 +1480,7 @@ function hideFoldersOnListUpdate() {
 // =========================================================================
 
 function renderTocManagerPopup() {
+    if ($('#toc_manager_popup').length) return;
     const contextInfo = getCurrentContextInfo();
     const contextId = contextInfo.id;
     const contextTagName = contextId === 'root' ? '메인 목록 (Root)' : contextInfo.name;
@@ -1399,23 +1540,27 @@ const popupHtml = `
 			<div class="toc-manager-modal" id="toc_manager_modal_inner">
 				<div class="toc-header" style="display:flex; align-items:center; justify-content:space-between; padding: 18px 24px; border-bottom: 1px solid var(--fh-border);">
                     <span style="font-size:1.1rem; font-weight:700; letter-spacing:-0.3px;">${escapeHtml(displayTitle)}</span>
-                    <i class="fa-solid fa-xmark close-toc-btn" style="cursor:pointer; font-size:1.2rem; opacity:0.6; transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6"></i>
+                    <button type="button" class="fh-manager-close close-toc-btn" aria-label="캐릭터 관리 닫기"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
                 </div>
-                
+                <div class="fh-manager-content">
 <div class="toc-toolbar" style="padding: 16px 24px; border-bottom: 1px solid var(--fh-border); display:flex; flex-direction:column; gap:10px;">
-                    <div class="toc-toolbar-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <div class="toc-toolbar-row fh-toc-selection-controls" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <div class="fh-selection-actions">
                         <button id="toc_select_all_btn" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">전체 선택</button>
                         <button id="toc_deselect_all_btn" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">선택 해제</button>
-                        <div style="width:1px; height:20px; background:var(--fh-border); margin:0 2px;"></div>
+                        </div>
+                        <div class="fh-toolbar-divider" style="width:1px; height:20px; background:var(--fh-border); margin:0 2px;"></div>
+                        <div class="fh-tag-selection">
                         <input type="text" id="toc_tag_filter_input" list="toc_tag_datalist" placeholder="태그 선택 또는 검색..." style="width:150px; padding: 7px 12px; border-radius:8px; font-size:0.9rem;">
                         <datalist id="toc_tag_datalist">${tagOptionsHtml}</datalist>
                         <button id="toc_select_by_tag_btn" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">태그로 선택</button>
+                        </div>
                         <div class="fh-view-switch" role="group" aria-label="목록 보기 방식">
                             <button type="button" class="fh-toc-view-btn" data-view="card">▦ 카드</button>
                             <button type="button" class="fh-toc-view-btn" data-view="list">☰ 리스트</button>
                         </div>
                     </div>
-                    <div class="toc-toolbar-row" style="display:flex; align-items:center; gap:8px;">
+                    <div class="toc-toolbar-row fh-manager-move-controls" style="display:flex; align-items:center; gap:8px;">
                         <span style="font-size:0.9rem; opacity:0.7; white-space:nowrap;">선택한 항목을:</span>
                         <select id="toc_move_target_select" style="flex:1; min-width:150px; padding: 7px 10px; border-radius:8px; font-size:0.9rem;">
                             <option value="">(이동할 구분선 선택)</option>
@@ -1442,6 +1587,7 @@ const popupHtml = `
                             <i class="fa-solid fa-xmark" id="toc_search_clear" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer; opacity:0.4; font-size:0.85rem; display:none; color:var(--fh-text);"></i>
                         </div>
                     </div>
+                </div>
                 </div>
                 <div class="toc-footer" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; padding: 14px 24px; border-top: 1px solid var(--fh-border);">
                     <button class="lavender-btn reset-toc-btn" style="width: auto; padding: 7px 16px; font-size:0.9rem; background: #ff7675 !important; color: #fff !important; margin-right: auto;">↻ 데이터 삭제(초기화)</button>
@@ -1507,38 +1653,16 @@ const popupHtml = `
     $infoPopover.on('mouseenter', () => clearTimeout(infoHideTimer));
     $infoPopover.on('mouseleave', hideInfo);
     $list.on('scroll', hideInfo);
+    $modal.find('.fh-manager-content').on('scroll', hideInfo);
     $(window).on('resize.fhTocInfo', hideInfo);
     $(document).on('pointerdown.fhTocInfo', event => {
         if (!event.target.closest('.toc-btn.info, .fh-toc-info-popover')) hideInfo();
     });
 
-    function updatePopupPosition() {
-        if ($modal.length === 0) return;
-        const isMobile = window.innerWidth <= 768;
-        if (isMobile) {
-            const $chat = $('#chat');
-            $overlay.css({ 'display': 'block', 'padding': '0' });
-            if ($chat.length > 0) {
-                const rect = $chat[0].getBoundingClientRect();
-                $modal.css({
-                    'position': 'fixed', 'top': rect.top + 'px', 'height': rect.height + 'px',
-                    'left': '50%', 'transform': 'translateX(-50%)', 'width': '98%',
-                    'max-width': 'unset', 'max-height': 'unset', 'border-radius': '12px', 'margin': '0'
-                });
-            }
-        } else {
-            $overlay.css({ 'display': 'flex', 'justify-content': 'center', 'align-items': 'center', 'padding': '' });
-            $modal.css({
-                'position': 'relative', 'top': '', 'left': '', 'transform': '', 'width': '90%',
-                'height': '', 'max-width': '1100px', 'max-height': '92dvh', 'margin': ''
-            });
-        }
-    }
-    updatePopupPosition();
-    $(window).on('resize.tocManager', updatePopupPosition);
+    const unbindViewport = bindManagerViewport($overlay[0]);
 
     function closePopup() {
-        $(window).off('resize.tocManager');
+        unbindViewport();
         $(window).off('resize.fhTocInfo');
         $(document).off('pointerdown.fhTocInfo');
         hideInfo();
@@ -1561,7 +1685,8 @@ const popupHtml = `
         hideInfo();
         if (dragState) clearCardDrag();
         $list.toggleClass('fh-list-view', settings.toc_view_mode === 'list');
-        const scrollTop = $list.scrollTop();
+        const scrollElement = getManagerScrollElement($list[0]);
+        const scrollTop = scrollElement.scrollTop;
         $list.find('.toc-item').remove();
         $targetSelect.find('option:not(:first)').remove(); 
 
@@ -1655,7 +1780,7 @@ const popupHtml = `
 
         if (htmlParts.length) $list.append(htmlParts.join(''));
 
-        $list.scrollTop(scrollTop);
+        scrollElement.scrollTop = scrollTop;
         bindItemEvents();
     }
 
@@ -1770,10 +1895,11 @@ const popupHtml = `
         if (dragState.y >= rect.top && dragState.y < rect.top + edge) amount = -14;
         else if (dragState.y <= rect.bottom && dragState.y > rect.bottom - edge) amount = 14;
         if (amount) {
-            const before = $list[0].scrollTop;
-            $list[0].scrollTop += amount;
-            if ($list[0].scrollTop !== before) updateDropTarget();
-            dragState.scrollFrame = $list[0].scrollTop !== before
+            const scrollElement = getManagerScrollElement($list[0]);
+            const before = scrollElement.scrollTop;
+            scrollElement.scrollTop += amount;
+            if (scrollElement.scrollTop !== before) updateDropTarget();
+            dragState.scrollFrame = scrollElement.scrollTop !== before
                 ? requestAnimationFrame(scrollWhileDragging) : null;
         }
     }
@@ -1781,7 +1907,7 @@ const popupHtml = `
     function activateCardDrag() {
         if (!dragState || dragState.active) return;
         dragState.active = true;
-        dragState.listRect = $list[0].getBoundingClientRect();
+        dragState.listRect = getManagerScrollElement($list[0]).getBoundingClientRect();
         if (dragState.touch) {
             $list[0].removeEventListener('touchmove', onCardTouchMove);
             $list[0].addEventListener('touchmove', onCardTouchMove, { passive: false });
@@ -2615,11 +2741,11 @@ const popupHtml = `
         <div class="toc-manager-modal" id="pm_modal_inner" style="max-width: 1000px;">
             <div class="toc-header" style="display:flex; align-items:center; justify-content:space-between; padding: 18px 24px; border-bottom: 1px solid var(--fh-border);">
                 <span style="font-size:1.1rem; font-weight:700; letter-spacing:-0.3px;">페르소나 폴더 일괄 관리</span>
-                <i class="fa-solid fa-xmark close-popup-btn" style="cursor:pointer; font-size:1.2rem; opacity:0.6; transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6"></i>
+                <button type="button" class="fh-manager-close close-popup-btn" aria-label="페르소나 관리 닫기"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
             </div>
-            
+            <div class="fh-manager-content">
             <div class="toc-toolbar" style="padding: 16px 24px; border-bottom: 1px solid var(--fh-border); display:flex; flex-direction:column; gap:10px;">
-                <div class="toc-toolbar-row" style="display:flex; gap:8px; align-items:center;">
+                <div class="toc-toolbar-row fh-pm-search-controls" style="display:flex; gap:8px; align-items:center;">
                     <input type="text" id="pm_search_input" placeholder="이름 및 정보 검색..." style="flex:1; padding: 8px 12px; border-radius:8px; font-size:0.9rem;">
                     <select id="pm_filter_lang" style="min-width: 110px; padding: 8px 10px; border-radius:8px; font-size:0.9rem;">
                         <option value="">(모든 언어)</option>
@@ -2636,11 +2762,13 @@ const popupHtml = `
                     </select>
                 </div>
                 <div class="toc-toolbar-row" style="display:flex; justify-content: space-between; align-items:center; gap:10px;">
-                    <div style="display:flex; align-items:center; gap: 8px;">
+                    <div class="fh-pm-selection-controls" style="display:flex; align-items:center; gap: 8px;">
+                        <div class="fh-selection-actions">
                         <button id="pm_select_all" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">전체선택</button>
                         <button id="pm_deselect_all" style="padding: 6px 14px; border-radius:7px; font-size:0.85rem; font-weight:600;">해제</button>
-                        <div style="width:1px; height:20px; background:var(--fh-border); margin:0 4px;"></div>
-                        <label style="cursor:pointer; display:flex; align-items:center; gap:5px; font-weight:600; font-size:0.9rem; color:var(--fh-text); opacity:0.8;">
+                        </div>
+                        <div class="fh-toolbar-divider" style="width:1px; height:20px; background:var(--fh-border); margin:0 4px;"></div>
+                        <label class="fh-image-toggle" style="cursor:pointer; display:flex; align-items:center; gap:5px; font-weight:600; font-size:0.9rem; color:var(--fh-text); opacity:0.8;">
                             <input type="checkbox" id="pm_toggle_images" checked> 🖼️ 이미지 표시
                         </label>
                         <div class="fh-view-switch" role="group" aria-label="페르소나 보기 방식">
@@ -2648,7 +2776,7 @@ const popupHtml = `
                             <button type="button" class="fh-pm-view-btn" data-view="list">☰ 리스트</button>
                         </div>
                     </div>
-                    <div style="display:flex; gap:8px; align-items:center;">
+                    <div class="fh-pm-move-controls fh-manager-move-controls" style="display:flex; gap:8px; align-items:center;">
                         <span style="font-size:0.9rem; opacity:0.7; white-space:nowrap;">선택항목을:</span>
                         <select id="pm_target_folder" style="min-width:130px; padding: 7px 10px; border-radius:8px; font-size:0.9rem;">
                             <option value="">(이동할 폴더)</option>
@@ -2664,7 +2792,7 @@ const popupHtml = `
             <div class="toc-body" id="pm_list_body" style="padding: 16px 24px; overflow-y:auto;">
                 <!-- 리스트 주입됨 -->
             </div>
-            
+            </div>
             <div class="toc-footer" style="display:flex; align-items:center; justify-content:flex-end; gap:10px; padding: 14px 24px; border-top: 1px solid var(--fh-border);">
                 <small id="pm_status" style="margin-right:auto; color:var(--fh-text); opacity:0.7; font-size:0.82rem;">카드를 길게 누르거나 끌어서 위 폴더로 이동할 수 있습니다.</small>
                 <button class="lavender-btn close-popup-btn" style="width: auto; padding: 7px 22px; font-size:0.9rem;">닫기</button>
@@ -2684,50 +2812,10 @@ const popupHtml = `
     let pmSuppressClick = false;
     let pmLastTouchTime = 0;
 
-    function updatePopupPosition() {
-        if ($modal.length === 0) return;
-        const isMobile = window.innerWidth <= 768;
-        
-        if (isMobile) {
-            const $chat = $('#chat');
-            $overlay.css({ 'display': 'block', 'padding': '0' });
-            
-            if ($chat.length > 0) {
-                const rect = $chat[0].getBoundingClientRect();
-                $modal.css({
-                    'position': 'fixed', 
-                    'top': rect.top + 'px', 
-                    'height': rect.height + 'px',
-                    'left': '50%', 
-                    'transform': 'translateX(-50%)', 
-                    'width': '98%',
-                    'max-width': 'unset', 
-                    'max-height': 'unset', 
-                    'border-radius': '12px', 
-                    'margin': '0'
-                });
-            }
-        } else {
-            $overlay.css({ 'display': 'flex', 'padding': '' });
-            $modal.css({
-                'position': 'relative', 
-                'top': '', 
-                'left': '', 
-                'transform': '', 
-                'width': '90%',
-                'height': '', 
-                'max-width': '1000px', 
-                'max-height': '92dvh', 
-                'margin': ''
-            });
-        }
-    }
-
-    updatePopupPosition();
-    $(window).on('resize.pmManager', updatePopupPosition);
+    const unbindViewport = bindManagerViewport($overlay[0]);
 
     const close = () => {
-        $(window).off('resize.pmManager'); 
+        unbindViewport();
         removePersonaDragListeners();
         $overlay.remove();
         renderPersonaTabs(); 
@@ -2774,7 +2862,8 @@ const popupHtml = `
     const renderList = () => {
         clearPersonaDrag();
         const $list = $pmList;
-        const scrollTop = $list.scrollTop();
+        const scrollElement = getManagerScrollElement($list[0]);
+        const scrollTop = scrollElement.scrollTop;
         $list.empty();
         $list.toggleClass('fh-list-view', settings.persona_view_mode === 'list');
 
@@ -2818,7 +2907,7 @@ const popupHtml = `
         });
 
         if (htmlParts.length) $list.append(htmlParts.join(''));
-        $list.scrollTop(scrollTop);
+        scrollElement.scrollTop = scrollTop;
         $list.find('.toc-item').click(function(e) {
             if ($(e.target).closest('input').length) return;
             const idx = $(this).data('idx');
@@ -3191,14 +3280,14 @@ function renderHiddenFolderList() {
     themeManager.init(settings.theme);
 	
     // 다음 업데이트 때: CURRENT_NOTICE_ID를 v2로 바꾸고, CURRENT_NOTICE_HTML에 새 내용을 적기만 하면 됩니다.
-    const CURRENT_NOTICE_ID = 'patch_2026_09_compat_v1'; 
+    const CURRENT_NOTICE_ID = 'patch_2026_10_mobile_v1';
 
     // 이번 공지사항의 내용 (HTML 태그 사용 가능)
     const CURRENT_NOTICE_HTML = `
         <p>
-            최신 SillyTavern 호환성을 개선했습니다.<br>
-            페르소나 일괄 관리에서 모든 페이지의 항목을 표시하고,
-            목차 및 숨김 상태의 적용 오류를 수정했습니다.
+            모바일 관리창의 화면 잘림을 수정했습니다.<br>
+            캐릭터·페르소나 관리창이 현재 보이는 화면에 맞춰지고,
+            키보드가 뜨거나 가로로 회전해도 제목과 하단 버튼을 사용할 수 있습니다.
         </p>
     `;
 
